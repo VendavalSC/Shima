@@ -21,7 +21,7 @@ macOS 26 or later. Works with or without a camera notch.
 
 ## Install
 
-Download `Shima.zip` from [Releases](https://github.com/VendavalSC/Shima/releases/latest), unzip, and move Shima to Applications.
+Download `Shima.dmg` from [Releases](https://github.com/VendavalSC/Shima/releases/latest), open it, and drag Shima to Applications.
 Shima isn't notarized yet, so the first time: right-click it → **Open** → **Open**, or run:
 
 ```bash
