@@ -161,9 +161,38 @@ private struct SettingsIcon: View {
 
 private struct GeneralPane: View {
     @Bindable var settings: AppSettings
+    let updater = Updater.shared
 
     var body: some View {
         Form {
+            Section {
+                LabeledContent("Shima \(Updater.currentVersion)") {
+                    switch updater.state {
+                    case .available(let version):
+                        Button("Install \(version)") { updater.install() }.buttonStyle(.borderedProminent)
+                    case .checking:
+                        ProgressView().controlSize(.small)
+                    case .installing:
+                        HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Installing…").foregroundStyle(.secondary) }
+                    default:
+                        Button("Check for Updates") { updater.check() }
+                    }
+                }
+            } header: {
+                Text("Updates")
+            } footer: {
+                Group {
+                    switch updater.state {
+                    case .upToDate: Text("You're up to date.")
+                    case .available(let version): Text("Shima \(version) is available. Shima installs it and reopens.")
+                    case .failed(let message): Text(message)
+                    default: Text("Shima looks for a new version once a day.")
+                    }
+                }
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            }
+
             Section {
                 Toggle("Open at login", isOn: Binding(get: { settings.launchAtLogin },
                                                       set: { settings.setLaunchAtLogin($0) }))

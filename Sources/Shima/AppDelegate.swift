@@ -63,6 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.activeIsland?.showDemoDevice(demo) }
         }
         installMainMenu()
+        Updater.shared.start()
         installStatusItem()
         trackChanges { [weak self] in
             guard let self else { return }
@@ -113,6 +114,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showSettings() { settingsWindow.show() }
     @objc private func showAbout() { settingsWindow.show(.about) }
+    @objc private func checkForUpdates() {
+        Updater.shared.check()
+        settingsWindow.show(.general)
+    }
 
     private func installStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -121,6 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         let settingsItem = menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
         settingsItem.target = self
+        menu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Shima", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.menu = menu
