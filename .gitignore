@@ -3,3 +3,4 @@ build/
 .DS_Store
 # A local code-signing certificate's name (see build.sh).
 .signing-identity
+.claude/

@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shima</title>
+<meta name="description" content="Shima turns your Mac's notch into an island: music, notifications you can reply to, AirPods, a timer and more. Free and open source.">
+<meta property="og:title" content="Shima — a free Dynamic Island for your Mac">
+<meta property="og:description" content="Music, notifications you can reply to, AirPods, a timer and more, in your Mac's notch. Free and open source.">
+<meta property="og:image" content="https://vendavalsc.github.io/Shima/assets/icon.png">
+<link rel="icon" href="assets/icon.png">
+<style>
+:root {
+  --bg: #ffffff;
+  --text: #1d1d1f;
+  --muted: #6e6e73;
+  --line: #e5e5ea;
+  --soft: #f5f5f7;
+  --link: #0066cc;
+  --blue: #0a6ce0;
+  --spring: linear(0, .0477, .1594, .2992, .4432, .5771, .6933, .7888, .8638, .92, .9602, .9875, 1.0047, 1.0144, 1.0189, 1.0199, 1.0187, 1.0164, 1.0136, 1.0107, 1.0081, 1.0059, 1.004, 1.0026, 1.0015, 1.0007, 1.0002, .9999, .9997, .9996, .9996, .9997, .9998, .9999, 1);
+  --smooth: linear(0, .0316, .1058, .2003, .3011, .3997, .4914, .5737, .6458, .708, .7607, .805, .8418, .8723, .8972, .9175, .9341, .9474, .9581, .9668, .9737, .9792, .9836, .987, .9898, .992, .9937, .9951, .9961, .997, .9976, .9982, .9986, .9989, .9991, .9993, .9995, .9996, .9997, .9998, 1);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #000; --text: #f5f5f7; --muted: #a1a1a6; --line: #2c2c2e; --soft: #1c1c1e; --link: #2997ff; }
+}
+:root[data-theme="dark"] { --bg: #000; --text: #f5f5f7; --muted: #a1a1a6; --line: #2c2c2e; --soft: #1c1c1e; --link: #2997ff; }
+@property --p { syntax: "<number>"; inherits: true; initial-value: 0; }
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.47 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.wrap { max-width: 980px; margin: 0 auto; padding: 0 22px; }
+
+header.top { padding: 22px 0; }
+header.top .wrap { display: flex; align-items: center; gap: 10px; }
+header.top img { width: 30px; height: 30px; }
+header.top b { font-size: 17px; }
+header.top nav { margin-left: auto; display: flex; gap: 22px; font-size: 14px; }
+header.top nav a { color: var(--text); opacity: .8; }
+@media (max-width: 520px) { header.top nav a:not(:last-child) { display: none; } }
+
+.hero { padding: 56px 0 36px; text-align: center; }
+.hero h1 { font-size: clamp(48px, 8vw, 80px); line-height: 1.05; letter-spacing: -.02em; margin: 0; font-weight: 700; }
+.hero h1 span { color: var(--muted); font-weight: 400; margin-left: .18em; }
+.hero p { font-size: clamp(19px, 2.4vw, 24px); line-height: 1.35; color: var(--muted); margin: 14px auto 28px; max-width: 620px; }
+.actions { display: flex; gap: 18px; justify-content: center; align-items: center; flex-wrap: wrap; }
+.download { background: var(--blue); color: #fff; padding: 12px 22px; border-radius: 980px; font-size: 17px; font-weight: 500; }
+.download:hover { text-decoration: none; filter: brightness(1.08); }
+.small { font-size: 14px; color: var(--muted); margin-top: 14px; }
+
+/* ---------- The preview ---------- */
+.preview { padding: 10px 0 0; }
+.fit { position: relative; margin: 0 auto; max-width: 1000px; }
+.fit.phone { overflow: hidden; border-radius: 18px; box-shadow: 0 20px 50px -25px rgba(0,0,0,.5); }
+.fit.phone .stage { border: 0; border-radius: 0; box-shadow: none; }
+.stage { position: absolute; left: 0; top: 0; width: 1000px; height: 625px; transform-origin: 0 0; border-radius: 22px; overflow: hidden;
+  border: 10px solid #0c0c0e; box-shadow: 0 30px 70px -30px rgba(0,0,0,.45), 0 0 0 1px rgba(0,0,0,.08);
+  background:
+    radial-gradient(120% 90% at 85% 120%, #2bb3d8 0%, transparent 55%),
+    radial-gradient(90% 80% at 0% 0%, #7fc4f5 0%, transparent 55%),
+    radial-gradient(70% 60% at 60% 40%, #3a7bd5 0%, transparent 70%),
+    linear-gradient(165deg, #4d93e6 0%, #1f56b6 55%, #0f2f78 100%);
+  user-select: none; -webkit-user-select: none; text-align: left; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; }
+.menubar { position: absolute; inset: 0 0 auto; height: 30px; display: flex; align-items: center; gap: 20px; padding: 0 18px;
+  color: rgba(255,255,255,.95); font-size: 13.5px; background: rgba(20,40,90,.22); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+.menubar b { font-weight: 700; }
+.menubar .right { margin-left: auto; display: flex; gap: 16px; align-items: center; }
+.menubar svg { width: 16px; height: 16px; }
+
+.notch { position: absolute; left: 50%; top: 0; transform: translateX(-50%); z-index: 5; }
+.shape { position: relative; background: #000; width: 184px; height: 30px; border-radius: 0 0 10px 10px;
+  transition: width .48s var(--spring), height .48s var(--spring), border-radius .48s var(--spring), margin-top .48s var(--spring); }
+.shape.closing { transition-timing-function: var(--smooth); }
+.shape::before, .shape::after { content: ""; position: absolute; top: 0; width: 8px; height: 8px; transition: opacity .2s; }
+.shape::before { left: -8px; background: radial-gradient(circle at 0 100%, transparent 7.5px, #000 8px); }
+.shape::after { right: -8px; background: radial-gradient(circle at 100% 100%, transparent 7.5px, #000 8px); }
+.island .shape::before, .island .shape::after { opacity: 0; }
+.content { position: absolute; inset: 0; overflow: clip; border-radius: inherit; }
+.layer { position: absolute; top: 0; left: 50%; transform: translateX(-50%); opacity: 0; filter: blur(5px); pointer-events: none;
+  transition: opacity .07s ease-out, filter .07s ease-out; color: #fff; }
+.layer.on { opacity: 1; filter: blur(0); pointer-events: auto; transition: opacity .16s ease-out .1s, filter .16s ease-out .1s; }
+.layer.on.late { transition-delay: .2s; }
+
+/* Closed wings */
+.wings { display: flex; align-items: center; justify-content: space-between; padding: 0 7px; height: 30px; }
+.island .wings { height: 32px; padding: 0 9px; }
+.cover { border-radius: 5px; flex: none; }
+.bars { display: flex; align-items: center; gap: 2px; height: 14px; }
+.bars i { display: block; width: 2.5px; height: 4px; border-radius: 2px; background: linear-gradient(var(--b1), var(--b2)); }
+.bars.play i { animation: bar 1s ease-in-out infinite; }
+.bars.play i:nth-child(2) { animation-duration: 1.23s; animation-delay: -.4s; }
+.bars.play i:nth-child(3) { animation-duration: .91s; animation-delay: -.7s; }
+.bars.play i:nth-child(4) { animation-duration: 1.37s; animation-delay: -.2s; }
+.bars.play i:nth-child(5) { animation-duration: 1.08s; animation-delay: -.55s; }
+@keyframes bar { 0%, 100% { height: 4px; } 30% { height: 13px; } 60% { height: 7px; } 80% { height: 11px; } }
+.bars.big { height: 18px; gap: 2.5px; } .bars.big i { width: 3px; }
+.bars.big.play i { animation-name: barBig; }
+@keyframes barBig { 0%, 100% { height: 5px; } 30% { height: 17px; } 60% { height: 9px; } 80% { height: 14px; } }
+.timerWing { color: #ff9f0a; font: 600 13px -apple-system, sans-serif; font-variant-numeric: tabular-nums; }
+
+/* Open: pages */
+.open { width: 344px; height: 158px; }
+.page { position: absolute; left: 16px; top: 16px; width: 312px; height: 126px; transform-origin: 50% 50%; }
+.pages.snap .page { transition: transform .42s var(--spring), opacity .42s, filter .42s; }
+.ptop { display: flex; gap: 12px; align-items: center; height: 52px; }
+.ptop .names { flex: 1; min-width: 0; }
+.ptitle { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.partist { font-size: 15px; color: rgba(255,255,255,.55); }
+.scrub { position: absolute; left: 0; right: 0; top: 64px; height: 16px; display: flex; align-items: center; gap: 8px; font-size: 11px;
+  color: rgba(255,255,255,.55); font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer; touch-action: none; }
+.scrub .track { flex: 1; height: 4px; border-radius: 4px; background: rgba(255,255,255,.2); transition: height .15s; overflow: hidden; }
+.scrub:hover .track, .scrub.drag .track { height: 8px; }
+.scrub .fill { height: 100%; background: #fff; border-radius: 4px; }
+.ctrls { position: absolute; left: 0; right: 0; top: 90px; height: 36px; display: flex; justify-content: center; align-items: center; gap: 22px; }
+.btn { width: 44px; height: 36px; border: 0; background: none; color: #fff; display: grid; place-items: center; border-radius: 10px; cursor: pointer; padding: 0; }
+.btn:hover { background: rgba(255,255,255,.1); }
+.btn:active { transform: scale(.9); }
+.btn svg { width: 24px; height: 24px; }
+.btn.small { width: 30px; } .btn.small svg { width: 17px; height: 17px; opacity: .8; }
+.ctrls .out { position: absolute; right: 0; }
+.dots { position: absolute; left: 0; right: 0; bottom: 4px; display: flex; justify-content: center; gap: 6px; opacity: 0; transition: opacity .3s; }
+.dots.on { opacity: 1; }
+.dots i { width: 6px; height: 6px; border-radius: 3px; background: rgba(255,255,255,.3); transition: width .3s, background .3s; }
+.dots i.on { width: 14px; background: #fff; }
+
+.tTop { display: flex; justify-content: space-between; align-items: center; height: 36px; }
+.tLen { font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.pill { border: 0; border-radius: 99px; height: 30px; padding: 0 22px; font: 600 13px -apple-system, sans-serif; cursor: pointer; }
+.pill.orange { background: rgba(255,159,10,.25); color: #ff9f0a; }
+.ruler { position: absolute; left: 0; top: 46px; width: 312px; height: 66px; cursor: ew-resize; touch-action: none; }
+.tRun { position: absolute; inset: 0; }
+.round { position: absolute; top: 34px; width: 52px; height: 52px; border-radius: 50%; border: 0; display: grid; place-items: center; cursor: pointer; }
+.round svg { width: 18px; height: 18px; }
+.tTime { position: absolute; left: 0; right: 0; top: 30px; text-align: center; font-size: 38px; font-weight: 300; font-variant-numeric: tabular-nums; }
+.tSub { position: absolute; left: 0; right: 0; top: 78px; text-align: center; font-size: 11px; color: rgba(255,255,255,.5); font-weight: 500; }
+
+.cal { display: flex; gap: 14px; padding-top: 2px; }
+.cal .d { width: 76px; } .cal .wd { color: #ff453a; font-size: 11px; font-weight: 600; }
+.cal .n { font-size: 36px; line-height: 1.15; } .cal .m { font-size: 11px; color: rgba(255,255,255,.5); font-weight: 500; }
+.ev { display: flex; gap: 8px; margin-bottom: 8px; } .ev i { width: 3px; height: 26px; border-radius: 2px; }
+.ev b { display: block; font-size: 13px; font-weight: 600; } .ev small { font-size: 11px; color: rgba(255,255,255,.55); font-weight: 500; }
+
+.rings { display: flex; padding-top: 24px; }
+.ring { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 11px; color: rgba(255,255,255,.55); font-weight: 500; }
+.ring .r { --p: 0; width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; transition: --p .6s;
+  background: radial-gradient(closest-side, #000 calc(100% - 6px), transparent calc(100% - 5.5px)), conic-gradient(var(--c) calc(var(--p) * 1%), color-mix(in srgb, var(--c) 22%, #000) 0); }
+.ring .r span { color: #fff; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.shelf { display: flex; gap: 3px; }
+.file { width: 60px; height: 62px; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 10px; color: rgba(255,255,255,.75); }
+.file .doc { width: 34px; height: 42px; border-radius: 4px; background: linear-gradient(#fff, #dfe4ec); position: relative; }
+.file .doc::after { content: ""; position: absolute; right: 0; top: 0; border: 6px solid; border-color: #9aa3b2 #9aa3b2 transparent transparent; border-radius: 0 4px 0 0; }
+.file .doc.img { background: linear-gradient(160deg, #6fb7f2, #f4c861); }
+.file .doc.pdf { background: linear-gradient(#fff, #ffe1de); }
+.shelfFoot { position: absolute; left: 0; right: 0; top: 98px; display: flex; justify-content: space-between; font-size: 13px; color: rgba(255,255,255,.55); }
+
+/* Activities */
+.alertRow { display: flex; align-items: center; justify-content: space-between; height: 30px; padding: 0 11px; font: 600 13px -apple-system, sans-serif; }
+.island .alertRow { height: 32px; }
+.alertRow span { display: flex; align-items: center; gap: 6px; }
+.alertRow svg { width: 14px; height: 14px; }
+.banner { display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 16px 0 10px; }
+.island .banner { height: 54px; }
+.banner .t small { display: block; font-size: 11px; color: rgba(255,255,255,.55); font-weight: 500; }
+.banner .t b { font-size: 14px; font-weight: 600; }
+.banner .end { margin-left: auto; }
+.pods { width: 46px; height: 46px; animation: turn 4s ease-in-out infinite; }
+@keyframes turn { 0%, 100% { transform: rotateY(-35deg); } 50% { transform: rotateY(35deg); } }
+.bring { --p: 0; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; transition: --p .8s;
+  background: radial-gradient(closest-side, #000 calc(100% - 4px), transparent calc(100% - 3.5px)), conic-gradient(#30d158 calc(var(--p) * 1%), rgba(48,209,88,.22) 0); }
+.bring span { font: 600 11px -apple-system, sans-serif; color: #30d158; font-variant-numeric: tabular-nums; }
+.bring.small { width: 15px; height: 15px; background: radial-gradient(closest-side, #000 calc(100% - 2.5px), transparent calc(100% - 2px)), conic-gradient(#30d158 calc(var(--p) * 1%), rgba(48,209,88,.22) 0); }
+
+.note { width: 344px; padding: 0 16px; }
+.nhead { display: flex; gap: 12px; align-items: center; height: 72px; }
+.nicon { width: 38px; height: 38px; border-radius: 9px; background: linear-gradient(#5bf675, #12b52d); display: grid; place-items: center; flex: none; }
+.nicon svg { width: 22px; height: 22px; }
+.nbody { flex: 1; min-width: 0; }
+.nwho { display: flex; font-size: 13px; font-weight: 600; } .nwho span { margin-left: auto; font-size: 11px; color: rgba(255,255,255,.45); font-weight: 500; }
+.ntext { font-size: 12px; color: rgba(255,255,255,.7); }
+.reply { display: flex; gap: 8px; align-items: center; height: 32px; opacity: 0; transform: translateY(-6px); transition: opacity .2s, transform .2s; }
+.note.showReply .reply { opacity: 1; transform: none; }
+.rbox { flex: 1; height: 32px; border-radius: 99px; background: rgba(255,255,255,.1); display: flex; align-items: center; padding: 0 12px; cursor: text; }
+.rbox input { flex: 1; min-width: 0; background: none; border: 0; outline: none; color: #fff; font: 13px -apple-system, sans-serif; caret-color: #0a84ff; }
+.rbox input::placeholder { color: rgba(255,255,255,.35); }
+.send { width: 26px; height: 26px; border-radius: 50%; border: 0; display: grid; place-items: center; background: rgba(255,255,255,.2); cursor: pointer; padding: 0; }
+.send.ready { background: #0a84ff; }
+.send svg { width: 13px; height: 13px; }
+.sent { display: none; align-items: center; gap: 6px; font-size: 13px; color: rgba(255,255,255,.8); height: 32px; border-radius: 99px; background: rgba(255,255,255,.1); padding: 0 12px; }
+
+/* Try bar */
+.try { display: flex; flex-wrap: wrap; gap: 10px 22px; justify-content: center; align-items: center; margin: 22px 0 0; font-size: 15px; color: var(--muted); }
+.try button { font: inherit; color: var(--link); background: none; border: 0; padding: 0; cursor: pointer; }
+.try button:hover { text-decoration: underline; }
+.seg { display: inline-flex; background: var(--soft); border-radius: 8px; padding: 2px; }
+.seg button { color: var(--text); padding: 3px 12px; border-radius: 6px; font-size: 14px; }
+.seg button:hover { text-decoration: none; }
+.seg button.on { background: var(--bg); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+
+/* Text sections */
+section { padding: 88px 0 0; }
+h2 { font-size: clamp(30px, 4.4vw, 40px); letter-spacing: -.015em; line-height: 1.1; margin: 0 0 28px; font-weight: 700; }
+.list { display: grid; grid-template-columns: 1fr 1fr; gap: 26px 48px; }
+@media (max-width: 700px) { .list { grid-template-columns: 1fr; } }
+.list h3 { margin: 0 0 4px; font-size: 17px; font-weight: 600; }
+.list p { margin: 0; color: var(--muted); }
+.why { max-width: 680px; font-size: 21px; line-height: 1.5; }
+.why p { margin: 0 0 16px; }
+.why .sig { color: var(--muted); font-size: 17px; }
+ol.steps { padding-left: 20px; margin: 0; max-width: 680px; }
+ol.steps li { margin-bottom: 12px; }
+code { font: 14px ui-monospace, "SF Mono", Menlo, monospace; background: var(--soft); padding: 2px 6px; border-radius: 5px; word-break: break-all; }
+details { border-top: 1px solid var(--line); padding: 16px 0; max-width: 680px; }
+details:last-of-type { border-bottom: 1px solid var(--line); }
+summary { cursor: pointer; font-weight: 600; }
+details p { color: var(--muted); margin: 8px 0 0; }
+footer { margin-top: 96px; border-top: 1px solid var(--line); padding: 22px 0 40px; font-size: 13px; color: var(--muted); }
+footer .wrap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <img src="assets/icon.png" alt=""><b>Shima</b>
+    <nav><a href="#what">What it does</a><a href="#install">Install</a><a href="https://github.com/VendavalSC/Shima">GitHub</a></nav>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="wrap">
+    <h1>Shima<span>島</span></h1>
+    <p>An island for the notch on your Mac. Music, messages you can answer, AirPods, a timer. Free, and open source.</p>
+    <div class="actions">
+      <a class="download" href="https://github.com/VendavalSC/Shima/releases/latest/download/Shima.dmg">Download for Mac</a>
+      <a href="https://github.com/VendavalSC/Shima">View on GitHub ›</a>
+    </div>
+    <div class="small">Requires macOS 15 Sequoia or later. Works with or without a notch.</div>
+  </div>
+</div>
+
+<div class="preview">
+  <div class="wrap">
+    <div class="fit" id="fit">
+      <div class="stage" id="stage">
+        <div class="menubar">
+          <b>Finder</b><span>File</span><span>Edit</span><span>View</span><span>Go</span><span>Window</span>
+          <div class="right">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="17" height="10" rx="3"/><rect x="4" y="9" width="11" height="6" rx="1.5" fill="currentColor" stroke="none"/><path d="M21 10.5v3"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M2.5 9.5a14 14 0 0 1 19 0M6 13a9 9 0 0 1 12 0M9.5 16.5a4 4 0 0 1 5 0"/></svg>
+            <span id="clock"></span>
+          </div>
+        </div>
+
+        <div class="notch" id="notch">
+          <div class="shape" id="shape">
+            <div class="content">
+
+              <div class="layer late" data-l="music">
+                <div class="wings" style="width:252px">
+                  <div class="cover" id="miniCover" style="width:18px;height:18px"></div>
+                  <div class="bars play" id="miniBars"><i></i><i></i><i></i><i></i><i></i></div>
+                </div>
+              </div>
+
+              <div class="layer late" data-l="timerWings">
+                <div class="wings" style="width:324px">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ff9f0a" stroke-width="2.6" stroke-linecap="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2.5h6"/></svg>
+                  <span class="timerWing" id="timerWing">5:00</span>
+                </div>
+              </div>
+
+              <div class="layer" data-l="open">
+                <div class="open">
+                  <div class="pages" id="pages">
+                    <div class="page">
+                      <div class="ptop">
+                        <div class="cover" id="bigCover" style="width:52px;height:52px;border-radius:12px"></div>
+                        <div class="names"><div class="ptitle" id="title"></div><div class="partist" id="artist"></div></div>
+                        <div class="bars big play" id="bigBars"><i></i><i></i><i></i><i></i><i></i></div>
+                      </div>
+                      <div class="scrub" id="scrub"><span id="tNow">0:00</span><div class="track"><div class="fill" id="fill"></div></div><span id="tLeft">-0:00</span></div>
+                      <div class="ctrls">
+                        <button class="btn" id="prev" aria-label="Previous"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.5 18.5V5.5L2.5 12zM21 18.5V5.5L12 12z"/></svg></button>
+                        <button class="btn" id="play" aria-label="Play or pause"><svg viewBox="0 0 24 24" fill="currentColor" id="playIcon"></svg></button>
+                        <button class="btn" id="next" aria-label="Next"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.5 5.5v13l9-6.5zM3 5.5v13l9-6.5z"/></svg></button>
+                        <button class="btn small out" aria-label="Output"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="3" y="5" width="18" height="11" rx="2"/><path d="M1 19h22"/></svg></button>
+                      </div>
+                    </div>
+
+                    <div class="page">
+                      <div id="tIdle">
+                        <div class="tTop"><span class="tLen" id="tLen">25 min</span><button class="pill orange" id="tStart">Start</button></div>
+                        <canvas class="ruler" id="ruler" width="624" height="132"></canvas>
+                      </div>
+                      <div class="tRun" id="tRunning" hidden>
+                        <button class="round" id="tCancel" style="left:0;background:rgba(255,255,255,.14)" aria-label="Cancel"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+                        <div class="tTime" id="tTime">25:00</div>
+                        <div class="tSub" id="tSub"></div>
+                        <button class="round" id="tPause" style="right:0;background:rgba(255,159,10,.25)" aria-label="Pause"><svg viewBox="0 0 24 24" fill="#ff9f0a" id="tPauseIcon"></svg></button>
+                      </div>
+                    </div>
+
+                    <div class="page">
+                      <div class="cal">
+                        <div class="d"><div class="wd" id="wd"></div><div class="n" id="dn"></div><div class="m" id="mo"></div></div>
+                        <div>
+                          <div class="ev"><i style="background:#ff9f0a"></i><div><b>Design review</b><small>Now – 5:30 PM</small></div></div>
+                          <div class="ev"><i style="background:#30d158"></i><div><b>Dinner with Sam</b><small>8:00 – 9:30 PM</small></div></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="page">
+                      <div class="rings" id="rings">
+                        <div class="ring"><div class="r" style="--c:#0a84ff"><span>0%</span></div>CPU</div>
+                        <div class="ring"><div class="r" style="--c:#bf5af2"><span>0%</span></div>Memory</div>
+                        <div class="ring"><div class="r" style="--c:#ff9f0a"><span>0%</span></div>Disk</div>
+                        <div class="ring"><div class="r" style="--c:#30d158"><span>0%</span></div>Battery</div>
+                      </div>
+                    </div>
+
+                    <div class="page">
+                      <div class="shelf">
+                        <div class="file"><div class="doc img"></div>Beach.jpg</div>
+                        <div class="file"><div class="doc pdf"></div>Tickets.pdf</div>
+                        <div class="file"><div class="doc"></div>Notes.txt</div>
+                      </div>
+                      <div class="shelfFoot"><span>3 items</span><span>Drop files on the notch to keep them</span></div>
+                    </div>
+                  </div>
+                  <div class="dots" id="dots"></div>
+                </div>
+              </div>
+
+              <div class="layer" data-l="podsBanner">
+                <div class="banner" style="width:324px">
+                  <svg class="pods" viewBox="0 0 48 48"><g fill="#f5f5f7"><ellipse cx="15" cy="16" rx="7.5" ry="8.5"/><rect x="12.5" y="18" width="5" height="22" rx="2.5"/><ellipse cx="33" cy="16" rx="7.5" ry="8.5"/><rect x="30.5" y="18" width="5" height="22" rx="2.5"/></g><g fill="#9aa0a8"><circle cx="11.5" cy="15" r="2.6"/><circle cx="36.5" cy="15" r="2.6"/><rect x="13.5" y="37" width="3" height="2.5" rx="1"/><rect x="31.5" y="37" width="3" height="2.5" rx="1"/></g></svg>
+                  <div class="t"><small>Connected</small><b>AirPods Pro</b></div>
+                  <div class="end"><div class="bring" id="podRing"><span id="podN"></span></div></div>
+                </div>
+              </div>
+              <div class="layer late" data-l="podsWings">
+                <div class="wings" style="width:252px">
+                  <svg width="22" height="22" viewBox="0 0 48 48"><g fill="#f5f5f7"><ellipse cx="15" cy="16" rx="7.5" ry="8.5"/><rect x="12.5" y="18" width="5" height="22" rx="2.5"/><ellipse cx="33" cy="16" rx="7.5" ry="8.5"/><rect x="30.5" y="18" width="5" height="22" rx="2.5"/></g></svg>
+                  <div class="bring small" style="--p:85"></div>
+                </div>
+              </div>
+              <div class="layer late" data-l="caps">
+                <div class="alertRow" style="width:324px">
+                  <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round" id="capsIcon"><path d="M12 3 3 12h5v5h8v-5h5z"/><path d="M8 21h8"/></svg>Caps Lock</span>
+                  <span id="capsState"></span>
+                </div>
+              </div>
+              <div class="layer" data-l="message">
+                <div class="note" id="note">
+                  <div class="nhead">
+                    <div class="nicon"><svg viewBox="0 0 24 24" fill="#fff"><path d="M12 3C6.5 3 2 6.9 2 11.6c0 2.6 1.4 4.9 3.6 6.5L5 21l3.4-1.8c1.1.3 2.3.5 3.6.5 5.5 0 10-3.9 10-8.6S17.5 3 12 3z"/></svg></div>
+                    <div class="nbody"><div class="nwho">Alex Morgan<span>now</span></div><div class="ntext">Nachos at seven? I'll bring the cheese.</div></div>
+                  </div>
+                  <div class="reply" id="reply">
+                    <label class="rbox"><input id="rIn" placeholder="Reply to Alex Morgan…" maxlength="48" autocomplete="off"></label>
+                    <button class="send" id="rSend" aria-label="Send"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M12 19V5m0 0-6 6m6-6 6 6"/></svg></button>
+                  </div>
+                  <div class="sent" id="sent"><svg width="16" height="16" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#30d158"/><path d="m7.5 12 3 3 6-6" fill="none" stroke="#000" stroke-width="2.4" stroke-linecap="round"/></svg>Sent</div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="try">
+      <span>Point at the notch, and swipe with two fingers. Or try:</span>
+      <button data-try="pods">AirPods connecting</button>
+      <button data-try="message">A message</button>
+      <button data-try="caps">Caps Lock</button>
+      <span class="seg"><button class="on" data-style="notch">Notch</button><button data-style="island">Island</button></span>
+    </div>
+  </div>
+</div>
+
+<section id="what">
+  <div class="wrap">
+    <h2>What it does</h2>
+    <div class="list">
+      <div><h3>Now Playing</h3><p>What's playing in Music, Spotify or your browser, with a waveform in the cover's colors. Skip, scrub, change speakers.</p></div>
+      <div><h3>Messages you can answer</h3><p>Notifications show up in the notch instead of the corner. Point at a WhatsApp or iMessage and reply right there.</p></div>
+      <div><h3>AirPods</h3><p>When they connect, the notch shows them turning, with their battery, like on iPhone.</p></div>
+      <div><h3>Pages</h3><p>A timer you set with a ruler, today's calendar, system stats and a shelf for files. Swipe between them, in your order.</p></div>
+      <div><h3>The little things</h3><p>Charging, low battery, Caps Lock, Focus, and USB drives with an Eject button.</p></div>
+      <div><h3>Notch or island</h3><p>Hanging from the top, or floating like the Dynamic Island. On every display, each its own way.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap why">
+    <h2>Why it's free</h2>
+    <p>I wanted a notch app, and the good ones cost $15 to $25. So I made one, tried to make it as polished as the paid ones, and gave it away.</p>
+    <p>Shima means island in Japanese. The code is on <a href="https://github.com/VendavalSC/Shima">GitHub</a>, under the GPL. If you like it, a star helps a lot.</p>
+    <p class="sig">— <a href="https://github.com/VendavalSC">VendavalSC</a></p>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <h2>Install</h2>
+    <ol class="steps">
+      <li>Download <a href="https://github.com/VendavalSC/Shima/releases/latest/download/Shima.dmg">Shima.dmg</a>, open it, and drag Shima to Applications.</li>
+      <li>The first time, right-click Shima and choose Open. It isn't notarized by Apple yet, so macOS asks once. Or run <code>xattr -dr com.apple.quarantine /Applications/Shima.app</code></li>
+      <li>That's it. Shima updates itself from then on.</li>
+    </ol>
+    <div style="margin-top:40px">
+      <details><summary>Does it work without a notch?</summary><p>Yes. It draws its own, or floats as an island.</p></details>
+      <details><summary>What does it need access to?</summary><p>Only what you turn on: Accessibility for notifications and Caps Lock, Full Disk Access for Focus, Calendars for your events. Nothing leaves your Mac.</p></details>
+      <details><summary>Will it slow my Mac down?</summary><p>No. It sits at around 0% CPU when idle, and only wakes up when something happens.</p></details>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap"><span>Shima 島 · GPL-3.0</span><span>Not affiliated with Apple.</span></div>
+</footer>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const stage = $('stage'), fit = $('fit'), shape = $('shape'), notchEl = $('notch');
+  const layers = [...document.querySelectorAll('.layer')];
+  const scaleNow = () => stage.getBoundingClientRect().width / 1000;
+
+  // Drawn at real size, scaled to fit.
+  // On narrow screens, just the top middle of the screen, where the notch is, kept large.
+  function scale() {
+    const w = fit.clientWidth, phone = w < 700;
+    const k = phone ? Math.min(1, w / 440) : Math.min(1, w / 1000);
+    const left = phone ? (w - 1000 * k) / 2 : 0;
+    stage.style.transform = `translateX(${left}px) scale(${k})`;
+    fit.style.height = (phone ? 280 : 625) * k + 'px';
+    fit.classList.toggle('phone', phone);
+  }
+  addEventListener('resize', scale); scale();
+
+  // ---------- Music ----------
+  const songs = [
+    { title: 'Golden Hour', artist: 'The Meridian', art: ['#5ab3ef', '#f4c861'], bars: ['#7cc8ff', '#f6c85f'], len: 213 },
+    { title: 'Neon Tide', artist: 'Kaito', art: ['#ff5e87', '#6c5ce7'], bars: ['#ff7aa2', '#9b8cff'], len: 187 },
+    { title: 'Paper Lanterns', artist: 'Mori', art: ['#ffb36b', '#e8505b'], bars: ['#ffc48a', '#ff6b6b'], len: 241 },
+  ];
+  let song = 0, playing = true, elapsed = 85;
+  const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  function drawSong() {
+    const s = songs[song];
+    $('title').textContent = s.title; $('artist').textContent = s.artist;
+    for (const el of [$('miniCover'), $('bigCover')]) el.style.background = `linear-gradient(${s.art[0]}, ${s.art[1]})`;
+    for (const el of [$('miniBars'), $('bigBars')]) { el.style.setProperty('--b1', s.bars[0]); el.style.setProperty('--b2', s.bars[1]); el.classList.toggle('play', playing); }
+    $('playIcon').innerHTML = playing ? '<path d="M6.5 4.5h4v15h-4zm7 0h4v15h-4z"/>' : '<path d="M7 4v16l13-8z"/>';
+    drawTime();
+  }
+  function drawTime() {
+    const s = songs[song];
+    $('tNow').textContent = fmt(elapsed); $('tLeft').textContent = '-' + fmt(s.len - elapsed);
+    $('fill').style.width = (elapsed / s.len * 100) + '%';
+  }
+  $('play').onclick = e => { e.stopPropagation(); playing = !playing; drawSong(); };
+  $('next').onclick = e => { e.stopPropagation(); song = (song + 1) % songs.length; elapsed = 0; drawSong(); };
+  $('prev').onclick = e => { e.stopPropagation(); if (elapsed < 3) song = (song + songs.length - 1) % songs.length; elapsed = 0; drawSong(); };
+  setInterval(() => { if (!playing) return; elapsed += 1; if (elapsed >= songs[song].len) { song = (song + 1) % songs.length; elapsed = 0; drawSong(); } else drawTime(); }, 1000);
+  const scrub = $('scrub');
+  function seek(e) { const r = scrub.querySelector('.track').getBoundingClientRect(); elapsed = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * songs[song].len; drawTime(); }
+  scrub.addEventListener('pointerdown', e => { scrub.classList.add('drag'); scrub.setPointerCapture(e.pointerId); seek(e); });
+  scrub.addEventListener('pointermove', e => { if (scrub.classList.contains('drag')) seek(e); });
+  scrub.addEventListener('pointerup', () => scrub.classList.remove('drag'));
+
+  // ---------- Timer ----------
+  const ruler = $('ruler'), rc = ruler.getContext('2d');
+  let minutes = 25, timer = null;   // { end, paused, remaining }
+  function drawRuler() {
+    const w = 312, h = 66, mid = w / 2, base = h - 20, sp = 8;
+    rc.setTransform(2, 0, 0, 2, 0, 0); rc.clearRect(0, 0, w, h);
+    for (let m = Math.max(1, Math.floor(minutes) - 22); m <= Math.min(180, Math.ceil(minutes) + 22); m++) {
+      const x = mid + (m - minutes) * sp, d = Math.abs(x - mid) / 30, near = Math.exp(-d * d);
+      const edge = Math.min(Math.max(Math.min(x, w - x) / (w * .2), 0), 1), fade = edge * edge * (3 - 2 * edge);
+      const major = m % 5 === 0, hgt = (major ? 16 : 9) + 9 * near, wd = major ? 2 : 1.5, chosen = m <= minutes + .5;
+      rc.globalAlpha = fade * (chosen ? .7 + .3 * near : (major ? .5 : .28) + .4 * near);
+      rc.fillStyle = chosen ? '#ff9f0a' : '#fff';
+      rc.beginPath(); rc.roundRect(x - wd / 2, base - hgt, wd, hgt, wd / 2); rc.fill();
+      if (major) { rc.globalAlpha = fade * (.5 + .5 * near); rc.font = `${near > .5 ? 600 : 500} 10px -apple-system, sans-serif`; rc.textAlign = 'center'; rc.fillText(m, x, base + 14); }
+    }
+    rc.globalAlpha = 1; rc.fillStyle = '#ff9f0a'; rc.beginPath(); rc.roundRect(mid - 1.5, base - 33, 3, 35, 1.5); rc.fill();
+    const mm = Math.round(minutes);
+    $('tLen').textContent = mm >= 60 ? `${Math.floor(mm / 60)} hr${mm % 60 ? ', ' + mm % 60 + ' min' : ''}` : `${mm} min`;
+  }
+  let rStart = null, rFrom = 0;
+  ruler.addEventListener('pointerdown', e => { e.stopPropagation(); rStart = e.clientX; rFrom = minutes; ruler.setPointerCapture(e.pointerId); });
+  ruler.addEventListener('pointermove', e => { if (rStart === null) return; minutes = Math.max(1, Math.min(180, rFrom - (e.clientX - rStart) / scaleNow() / 8)); drawRuler(); });
+  ruler.addEventListener('pointerup', () => { rStart = null; settle(); });
+  ruler.addEventListener('wheel', e => { e.preventDefault(); e.stopPropagation(); minutes = Math.max(1, Math.min(180, minutes + (e.deltaX || e.deltaY) / scaleNow() / 8)); drawRuler(); clearTimeout(ruler.t); ruler.t = setTimeout(settle, 120); }, { passive: false });
+  function settle() { const from = minutes, to = Math.round(minutes), t0 = performance.now();
+    (function step(t) { const p = Math.min(1, (t - t0) / 250); minutes = from + (to - from) * (1 - Math.pow(1 - p, 3)); drawRuler(); if (p < 1) requestAnimationFrame(step); })(t0); }
+  const timerLeft = () => timer.paused ? timer.remaining : Math.max(0, (timer.end - Date.now()) / 1000);
+  function drawTimer() {
+    $('tIdle').hidden = !!timer; $('tRunning').hidden = !timer;
+    if (!timer) return;
+    const left = timerLeft();
+    $('tTime').textContent = fmt(Math.ceil(left)); $('timerWing').textContent = fmt(Math.ceil(left));
+    $('tTime').style.color = timer.paused ? 'rgba(255,255,255,.6)' : '#fff';
+    $('tSub').textContent = timer.paused ? 'Paused' : 'Ends at ' + new Date(timer.end).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    $('tPauseIcon').innerHTML = timer.paused ? '<path d="M7 4v16l13-8z"/>' : '<path d="M7 5h3.5v14H7zm6.5 0H17v14h-3.5z"/>';
+    if (left <= 0) { timer = null; drawTimer(); render(); }
+  }
+  $('tStart').onclick = e => { e.stopPropagation(); timer = { end: Date.now() + Math.round(minutes) * 60000, paused: false }; drawTimer(); };
+  $('tCancel').onclick = e => { e.stopPropagation(); timer = null; drawTimer(); };
+  $('tPause').onclick = e => { e.stopPropagation(); if (timer.paused) { timer.end = Date.now() + timer.remaining * 1000; timer.paused = false; } else { timer.remaining = timerLeft(); timer.paused = true; } drawTimer(); };
+  setInterval(() => { if (timer) drawTimer(); }, 250);
+
+  // ---------- Calendar, system, clock ----------
+  const now = new Date();
+  $('wd').textContent = now.toLocaleDateString('en', { weekday: 'long' }).toUpperCase();
+  $('dn').textContent = now.getDate(); $('mo').textContent = now.toLocaleDateString('en', { month: 'long' });
+  const clock = () => $('clock').textContent = new Date().toLocaleString('en', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  clock(); setInterval(clock, 15000);
+  const stats = [18, 61, 38, 84];
+  function drawStats() {
+    [...document.querySelectorAll('#rings .r')].forEach((r, i) => {
+      stats[i] = Math.max(3, Math.min(97, stats[i] + (i === 0 ? (Math.random() - .5) * 16 : i === 1 ? (Math.random() - .5) * 3 : 0)));
+      r.style.setProperty('--p', stats[i]); r.querySelector('span').textContent = Math.round(stats[i]) + '%';
+    });
+  }
+
+  // ---------- The notch ----------
+  const pageEls = [...document.querySelectorAll('.page')];
+  const dots = $('dots'); dots.innerHTML = pageEls.map(() => '<i></i>').join('');
+  let open = false, page = 0, drag = 0, island = false, activity = null, actTimer, hoverTimer, dotsTimer, swiping = false;
+  setInterval(() => { if (open && page === 3) drawStats(); }, 2000);
+
+  const sizes = () => island
+    ? { music: [194, 32, 16], timerWings: [266, 32, 16], podsWings: [194, 32, 16], caps: [266, 32, 16], podsBanner: [266, 54, 20],
+        open: [344, 158, 28], message: [344, 72, 22], messageReply: [344, 116, 24] }
+    : { music: [252, 30, 12], timerWings: [324, 30, 12], podsWings: [252, 30, 12], caps: [324, 30, 12], podsBanner: [324, 56, 20],
+        open: [344, 158, 28], message: [344, 72, 22], messageReply: [344, 116, 24] };
+  const note = $('note');
+
+  function current() {
+    if (activity) return activity === 'message' && note.classList.contains('showReply') ? 'messageReply' : activity;
+    if (open) return 'open';
+    if (timer) return 'timerWings';
+    return 'music';
+  }
+  let last = 'music';
+  function render() {
+    const state = current(), [w, h, r] = sizes()[state], [, lastH] = sizes()[last];
+    shape.classList.toggle('closing', h < lastH);
+    shape.style.width = w + 'px'; shape.style.height = h + 'px';
+    shape.style.borderRadius = island ? `${Math.min(r, h / 2)}px` : `0 0 ${r}px ${r}px`;
+    shape.style.marginTop = island ? '6px' : '0';
+    const layer = state === 'messageReply' ? 'message' : state;
+    layers.forEach(l => l.classList.toggle('on', l.dataset.l === layer));
+    for (const sel of ['[data-l="music"] .wings', '[data-l="podsWings"] .wings', '[data-l="timerWings"] .wings', '[data-l="caps"] .alertRow', '[data-l="podsBanner"] .banner']) {
+      const el = document.querySelector(sel), key = el.closest('.layer').dataset.l;
+      el.style.width = sizes()[key][0] + 'px';
+    }
+    last = state;
+  }
+
+  function layoutPages(animate) {
+    $('pages').classList.toggle('snap', animate);
+    pageEls.forEach((el, i) => {
+      const off = (i - page) * 344 + drag, d = Math.min(Math.abs(off) / 344, 1);
+      el.style.transform = `translateX(${off}px) scale(${1 - .08 * d})`;
+      el.style.opacity = 1 - .7 * d; el.style.filter = `blur(${6 * d}px)`;
+    });
+    [...dots.children].forEach((d, i) => d.classList.toggle('on', i === page));
+  }
+  function showDots(ms) { dots.classList.add('on'); clearTimeout(dotsTimer); if (ms) dotsTimer = setTimeout(() => dots.classList.remove('on'), ms); }
+
+  function setOpen(v) {
+    if (activity && v) return;
+    open = v; render();
+    if (v) { showDots(1200); if (page === 3) drawStats(); }
+  }
+  notchEl.addEventListener('pointerenter', e => {
+    if (e.pointerType === 'touch') return;
+    clearTimeout(hoverTimer);
+    if (activity === 'message') { note.classList.add('showReply'); holdActivity(); render(); return; }
+    if (!open && !activity) hoverTimer = setTimeout(() => setOpen(true), 120);
+  });
+  notchEl.addEventListener('pointerleave', e => {
+    if (e.pointerType === 'touch') return;
+    clearTimeout(hoverTimer);
+    if (activity === 'message') { if (!replying && $('sent').style.display !== 'flex') { note.classList.remove('showReply'); render(); releaseActivity(2000); } return; }
+    if (open) hoverTimer = setTimeout(() => { if (!swiping) setOpen(false); }, 250);
+  });
+  notchEl.addEventListener('click', () => { if (!open && !activity) setOpen(true); });
+  stage.addEventListener('click', e => { if (open && !notchEl.contains(e.target)) setOpen(false); });
+
+  // Two-finger swipe: the pages follow your fingers, stretch at the ends, and settle past 70pt.
+  let wheelEnd;
+  notchEl.addEventListener('wheel', e => {
+    if (!open || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+    e.preventDefault(); swiping = true; showDots();
+    drag -= e.deltaX / scaleNow();
+    const atEnd = (drag > 0 && page === 0) || (drag < 0 && page === pageEls.length - 1);
+    const shown = atEnd ? Math.sign(drag) * 40 * Math.log1p(Math.abs(drag) / 40) : drag;
+    const saved = drag; drag = shown; layoutPages(false); drag = saved;
+    clearTimeout(wheelEnd);
+    wheelEnd = setTimeout(() => {
+      swiping = false;
+      if (drag < -70 && page < pageEls.length - 1) page++; else if (drag > 70 && page > 0) page--;
+      drag = 0; layoutPages(true); showDots(900);
+      if (page === 3) drawStats();
+    }, 110);
+  }, { passive: false });
+  let touchX = null;
+  notchEl.addEventListener('touchstart', e => { touchX = e.touches[0].clientX; }, { passive: true });
+  notchEl.addEventListener('touchmove', e => { if (!open || touchX === null) return; drag = (e.touches[0].clientX - touchX) / scaleNow(); layoutPages(false); showDots(); }, { passive: true });
+  notchEl.addEventListener('touchend', () => { if (!open || touchX === null) return; touchX = null; if (drag < -50 && page < pageEls.length - 1) page++; else if (drag > 50 && page > 0) page--; drag = 0; layoutPages(true); showDots(900); });
+
+  // ---------- Activities ----------
+  const rIn = $('rIn');
+  let replying = false, capsOn = false;
+  function startActivity(name, ms) { clearTimeout(actTimer); clearTimeout(hoverTimer); open = false; activity = name; render(); if (ms) releaseActivity(ms); }
+  function releaseActivity(ms) { clearTimeout(actTimer); actTimer = setTimeout(() => { activity = null; note.classList.remove('showReply'); render(); }, ms); }
+  function holdActivity() { clearTimeout(actTimer); }
+  document.querySelectorAll('[data-try]').forEach(b => b.onclick = () => {
+    const t = b.dataset.try;
+    if (t === 'pods') {
+      $('podRing').style.setProperty('--p', 0); $('podN').textContent = '';
+      startActivity('podsBanner');
+      setTimeout(() => { $('podRing').style.setProperty('--p', 85); $('podN').textContent = '85'; }, 450);
+      actTimer = setTimeout(() => { activity = 'podsWings'; render(); actTimer = setTimeout(() => { activity = null; render(); }, 2200); }, 2600);
+    } else if (t === 'caps') {
+      capsOn = !capsOn;
+      $('capsState').textContent = capsOn ? 'On' : 'Off'; $('capsState').style.color = capsOn ? '#30d158' : 'rgba(255,255,255,.5)';
+      $('capsIcon').style.color = capsOn ? '#30d158' : 'rgba(255,255,255,.6)';
+      startActivity('caps', 1500);
+    } else {
+      rIn.value = ''; $('rSend').classList.remove('ready'); $('reply').style.display = 'flex'; $('sent').style.display = 'none'; replying = false;
+      note.classList.remove('showReply'); startActivity('message', 5000);
+    }
+  });
+  rIn.addEventListener('focus', () => { replying = true; holdActivity(); });
+  rIn.addEventListener('input', () => $('rSend').classList.toggle('ready', !!rIn.value.trim()));
+  function send() {
+    if (!rIn.value.trim()) return;
+    $('reply').style.display = 'none'; $('sent').style.display = 'flex'; rIn.blur(); replying = false;
+    releaseActivity(1300);
+  }
+  rIn.addEventListener('keydown', e => { if (e.key === 'Enter') send(); if (e.key === 'Escape') { rIn.blur(); replying = false; releaseActivity(1500); } });
+  $('rSend').onclick = e => { e.stopPropagation(); send(); };
+  // On touch screens, tapping the message shows the reply box.
+  note.addEventListener('click', () => { if (activity === 'message' && !note.classList.contains('showReply')) { note.classList.add('showReply'); holdActivity(); render(); } });
+
+  document.querySelectorAll('[data-style]').forEach(b => b.onclick = () => {
+    island = b.dataset.style === 'island';
+    document.querySelectorAll('[data-style]').forEach(x => x.classList.toggle('on', x === b));
+    stage.classList.toggle('island', island); render();
+  });
+
+  drawSong(); drawRuler(); drawStats(); layoutPages(false); render();
+})();
+</script>
+</body>
+</html>
