@@ -17,7 +17,7 @@
 
 ## Requirements
 
-macOS 26 or later. Works with or without a camera notch.
+macOS 15 Sequoia or later. Works with or without a camera notch.
 
 ## Install
 

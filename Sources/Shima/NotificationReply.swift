@@ -42,7 +42,7 @@ final class NotificationReplier {
     /// The reply box appears a moment after it's asked for.
     private func findField(attempt: Int, completion: @escaping (Bool) -> Void) {
         guard let banner else { return completion(false) }
-        guard let field = NotificationWatcher.first(in: banner, role: kAXTextAreaRole) else {
+        guard let field = Self.replyBox(near: banner) else {
             if attempt < 8 {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
                     self?.findField(attempt: attempt + 1, completion: completion)
@@ -54,13 +54,30 @@ final class NotificationReplier {
             }
             return
         }
-        Log.notify.info("reply: reply box ready")
+        Log.notify.info("reply: reply box ready (\(NotificationWatcher.attribute(field, kAXRoleAttribute) as? String ?? "?", privacy: .public))")
         self.field = field
         isActive = true
         text = ""
         focus(field)
         watch(field)
         completion(true)
+    }
+
+    /// The reply box: a text area (or, in some apps, a text field) in the banner, or elsewhere in its
+    /// window, since some apps' banners are rebuilt when Reply is pressed.
+    private static func replyBox(near banner: AXUIElement) -> AXUIElement? {
+        for role in [kAXTextAreaRole, kAXTextFieldRole] {
+            if let field = NotificationWatcher.first(in: banner, role: role) { return field }
+        }
+        var window: AXUIElement? = banner
+        while let current = window, NotificationWatcher.attribute(current, kAXRoleAttribute) as? String != kAXWindowRole {
+            window = NotificationWatcher.attribute(current, kAXParentAttribute).map { $0 as! AXUIElement }
+        }
+        guard let window else { return nil }
+        for role in [kAXTextAreaRole, kAXTextFieldRole] {
+            if let field = NotificationWatcher.first(in: window, role: role) { return field }
+        }
+        return nil
     }
 
     /// Notification Center comes forward with the reply box focused, as when you click into it.
@@ -131,6 +148,10 @@ final class NotificationReplier {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         if let send = NotificationWatcher.rawActions(banner).first(where: { NotificationWatcher.clean($0).hasPrefix("Name:Send") }) {
             AXUIElementPerformAction(banner, send as CFString)
+        } else {
+            // Some apps send on Return and have no Send action.
+            let source = CGEventSource(stateID: .hidSystemState)
+            for down in [true, false] { CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: down)?.postToPid(pid) }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.boxClosed() }
     }

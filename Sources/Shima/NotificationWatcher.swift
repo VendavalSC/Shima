@@ -112,7 +112,7 @@ final class NotificationWatcher {
         // normal: the window returns, an open reply box closes, and the banner times out as usual.
         for window in Self.attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? [] {
             if (Self.position(of: window)?.x ?? 0) >= Self.far.x / 2 { Self.setPosition(.zero, of: window) }
-            guard Self.first(in: window, role: kAXTextAreaRole) != nil else { continue }
+            guard Self.first(in: window, role: kAXTextAreaRole) != nil || Self.first(in: window, role: kAXTextFieldRole) != nil else { continue }
             for banner in Self.banners(in: window) {
                 if let hide = Self.rawActions(banner).first(where: { $0.hasPrefix("Name:Hide Details") }) {
                     AXUIElementPerformAction(banner, hide as CFString)
