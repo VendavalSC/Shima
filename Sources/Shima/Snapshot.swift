@@ -33,7 +33,7 @@ enum Snapshot {
         let pad = Metrics.padding
         let chat = NotchNotification(id: "3", app: "Messages", title: "Alex Morgan", subtitle: "",
                                      body: "Nachos at seven? I'll bring the cheese.", banner: AXUIElementCreateSystemWide(),
-                                     canReply: true)
+                                     replyAction: "Name:Reply")
         let states = [
             State(name: "idle", playing: false),
             State(name: "music"),

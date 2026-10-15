@@ -11,8 +11,10 @@ struct NotchNotification: Identifiable, Equatable {
     let body: String
     /// The system banner it came from, which knows how to open it and to reply.
     let banner: AXUIElement
-    /// Its banner has a reply box (chat apps: Messages, WhatsApp, Telegram...).
-    var canReply = false
+    /// The banner action that opens its reply box (chat apps: Messages, WhatsApp, Telegram...), as
+    /// the banner names it, in the Mac's language.
+    var replyAction: String?
+    var canReply: Bool { replyAction != nil }
 
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
 
@@ -114,7 +116,7 @@ final class NotificationWatcher {
             if (Self.position(of: window)?.x ?? 0) >= Self.far.x / 2 { Self.setPosition(.zero, of: window) }
             guard Self.first(in: window, role: kAXTextAreaRole) != nil || Self.first(in: window, role: kAXTextFieldRole) != nil else { continue }
             for banner in Self.banners(in: window) {
-                if let hide = Self.rawActions(banner).first(where: { $0.hasPrefix("Name:Hide Details") }) {
+                if let hide = Self.rawActions(banner).first(where: { Self.actionTitle($0) != nil }) {
                     AXUIElementPerformAction(banner, hide as CFString)
                 }
             }
@@ -183,13 +185,33 @@ final class NotificationWatcher {
         } else if let comma = description.firstIndex(of: ",") {
             app = String(description[..<comma])
         }
-        let actions = rawActions(banner).map(clean)
         let appName = clean(app)
-        // Chat apps put a Reply action on the banner; Messages keeps its reply box behind Show Details.
-        let canReply = actions.contains { $0.hasPrefix("Name:Reply") }
-            || (appName == "Messages" && actions.contains { $0.hasPrefix("Name:Show Details") })
         return NotchNotification(id: id, app: appName, title: title, subtitle: subtitle, body: body, banner: banner,
-                                 canReply: canReply)
+                                 replyAction: replyAction(banner, app: appName))
+    }
+
+    /// Banner actions are named in the Mac's language ("Reply", "Responder", "返信"...). Chat apps add
+    /// a reply action, recognized by its name in any of these languages; Messages keeps its reply box
+    /// behind Show Details, the banner's first named action, wherever it's in.
+    private static let replyNames: Set<String> = [
+        "reply", "responder", "répondre", "antworten", "rispondi", "beantwoorden", "antwoorden", "respon", "odpowiedz",
+        "ответить", "відповісти", "yanıtla", "cevapla", "返信", "回复", "回覆", "답장", "svara", "svar", "vastaa",
+        "odpovědět", "odpovedať", "απάντηση", "رد", "השב", "उत्तर दें", "balas", "trả lời", "ตอบกลับ", "răspunde",
+        "válasz", "odgovori", "atsakyti", "atbildēt", "vasta",
+    ]
+
+    /// The action's name, without "Name:" and the target details that follow it.
+    static func actionTitle(_ action: String) -> String? {
+        let cleaned = clean(action)
+        guard cleaned.hasPrefix("Name:") else { return nil }
+        return String(cleaned.dropFirst(5).prefix { $0 != "\n" }).trimmingCharacters(in: .whitespaces)
+    }
+
+    private static func replyAction(_ banner: AXUIElement, app: String) -> String? {
+        let named = rawActions(banner).filter { actionTitle($0) != nil }
+        if let reply = named.first(where: { replyNames.contains(actionTitle($0)!.lowercased()) }) { return reply }
+        if AppIcons.bundleID(forApp: app) == "com.apple.MobileSMS", named.count >= 2 { return named.first }
+        return nil
     }
 
     /// The banners in a Notification Center window. Alerts have their own subrole and aren't included.
@@ -266,15 +288,35 @@ enum AppIcons {
         return icon
     }
 
+    /// The app a notification names, which is its name as shown in the Mac's language ("Mensajes" for
+    /// Messages.app): running apps first, then installed ones by their shown names.
     static func url(forApp name: String) -> URL? {
         if let cached = urls[name] { return cached }
         let running = NSWorkspace.shared.runningApplications.first { $0.localizedName == name }?.bundleURL
-        let installed = ["/Applications", "/System/Applications", "/System/Applications/Utilities",
-                         "/System/Library/CoreServices", NSHomeDirectory() + "/Applications"]
-            .map { URL(fileURLWithPath: $0).appendingPathComponent(name + ".app") }
-            .first { FileManager.default.fileExists(atPath: $0.path) }
-        let url = running ?? installed
+        let url = running ?? installed[name] ?? installed[name.lowercased()]
         urls[name] = url
         return url
     }
+
+    static func bundleID(forApp name: String) -> String? {
+        url(forApp: name).flatMap { Bundle(url: $0)?.bundleIdentifier }
+    }
+
+    /// Installed apps by the names Finder shows (and by file name), looked up once.
+    private static let installed: [String: URL] = {
+        var apps: [String: URL] = [:]
+        let fileManager = FileManager.default
+        for folder in ["/Applications", "/System/Applications", "/System/Applications/Utilities",
+                       "/System/Library/CoreServices", NSHomeDirectory() + "/Applications"] {
+            for item in (try? fileManager.contentsOfDirectory(atPath: folder)) ?? [] where item.hasSuffix(".app") {
+                let path = folder + "/" + item
+                let shown = fileManager.displayName(atPath: path).replacingOccurrences(of: ".app", with: "")
+                let url = URL(fileURLWithPath: path)
+                apps[shown] = apps[shown] ?? url
+                apps[shown.lowercased()] = apps[shown.lowercased()] ?? url
+                apps[String(item.dropLast(4))] = apps[String(item.dropLast(4))] ?? url
+            }
+        }
+        return apps
+    }()
 }

@@ -28,9 +28,7 @@ final class NotificationReplier {
         let banner = notification.banner
         var pid: pid_t = 0
         guard AXUIElementGetPid(banner, &pid) == .success else { return completion(false) }
-        let actions = NotificationWatcher.rawActions(banner)
-        guard let open = actions.first(where: { NotificationWatcher.clean($0).hasPrefix("Name:Reply") })
-                ?? actions.first(where: { $0.hasPrefix("Name:Show Details") }) else { return completion(false) }
+        guard let open = notification.replyAction else { return completion(false) }
         let opened = AXUIElementPerformAction(banner, open as CFString)
         Log.notify.info("reply: opening the reply box (\(opened.rawValue, privacy: .public))")
         self.banner = banner
@@ -160,7 +158,8 @@ final class NotificationReplier {
     func cancel() {
         guard isActive else { return }
         if let field { AXUIElementSetAttributeValue(field, kAXValueAttribute as CFString, "" as CFString) }
-        if let banner, let hide = NotificationWatcher.rawActions(banner).first(where: { $0.hasPrefix("Name:Hide Details") }) {
+        // Hide Details: the expanded banner's first named action, whatever the language.
+        if let banner, let hide = NotificationWatcher.rawActions(banner).first(where: { NotificationWatcher.actionTitle($0) != nil }) {
             AXUIElementPerformAction(banner, hide as CFString)
         }
         end(sent: false)
