@@ -164,13 +164,14 @@ final class MediaController {
         }
     }
 
-    /// The artwork's colors for the waveform, from a 12x12 downsample: the vivid color of the top
-    /// half over that of the bottom half (a blue sky over a yellow field gives blue over yellow). Each
-    /// keeps its hue but is made vivid and bright enough to read on black. One color twice when the
-    /// halves agree; nil for grayscale art.
-    private static func accents(of image: NSImage) -> [Color]? {
+    /// The artwork's colors for the waveform, top to bottom: its two most prominent colors that are
+    /// clearly different hues, the one that sits higher in the artwork on top (a blue sky over a
+    /// yellow field gives blue over yellow). Art with a single color gets that color under a lighter,
+    /// slightly shifted tint of it, so there's always a gradient. Each keeps its hue but is made vivid
+    /// and bright enough to read on black. Nil for grayscale art.
+    static func accents(of image: NSImage) -> [Color]? {
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
-        let side = 12
+        let side = 16
         var pixels = [UInt8](repeating: 0, count: side * side * 4)
         let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
             guard let context = CGContext(data: buffer.baseAddress, width: side, height: side, bitsPerComponent: 8,
@@ -181,31 +182,45 @@ final class MediaController {
             return true
         }
         guard drawn else { return nil }
-        // Rows run top to bottom in the buffer.
-        let half = side * side * 4 / 2
-        let top = vividAverage(pixels[0..<half]), bottom = vividAverage(pixels[half...])
-        let whole = vividAverage(pixels[...])
-        guard let whole else { return nil }
-        guard let top, let bottom, distance(top, bottom) > 0.18 else { return [lifted(whole), lifted(whole)] }
-        return [lifted(top), lifted(bottom)]
-    }
 
-    /// The average color, weighted toward vivid pixels so a splash of color outweighs a gray or dark
-    /// background. Nil when there's no color to speak of.
-    private static func vividAverage(_ pixels: ArraySlice<UInt8>) -> NSColor? {
-        var sum = (r: 0.0, g: 0.0, b: 0.0, weight: 0.0)
-        var index = pixels.startIndex
-        while index + 3 < pixels.endIndex + 1 {
-            let r = Double(pixels[index]) / 255, g = Double(pixels[index + 1]) / 255, b = Double(pixels[index + 2]) / 255
-            let high = max(r, g, b), low = min(r, g, b)
-            let saturation = high > 0 ? (high - low) / high : 0
-            let weight = saturation * high + 0.02
-            sum = (sum.r + r * weight, sum.g + g * weight, sum.b + b * weight, sum.weight + weight)
-            index += 4
+        // Colorful pixels by hue, in twelve slices of the color wheel; rows run top to bottom.
+        struct Slice { var weight = 0.0, r = 0.0, g = 0.0, b = 0.0, row = 0.0 }
+        var slices = [Slice](repeating: Slice(), count: 12)
+        for row in 0..<side {
+            for column in 0..<side {
+                let i = (row * side + column) * 4
+                let r = Double(pixels[i]) / 255, g = Double(pixels[i + 1]) / 255, b = Double(pixels[i + 2]) / 255
+                let color = NSColor(srgbRed: r, green: g, blue: b, alpha: 1)
+                let saturation = color.saturationComponent, brightness = color.brightnessComponent
+                // Dark tints count too, for a little: they matter when the art has nothing brighter.
+                guard saturation > 0.18, brightness > 0.03 else { continue }
+                let weight = saturation * max(brightness, 0.25)
+                let k = min(Int(color.hueComponent * 12), 11)
+                slices[k].weight += weight
+                slices[k].r += r * weight
+                slices[k].g += g * weight
+                slices[k].b += b * weight
+                slices[k].row += Double(row) * weight
+            }
         }
-        guard sum.weight > 0 else { return nil }
-        let color = NSColor(srgbRed: sum.r / sum.weight, green: sum.g / sum.weight, blue: sum.b / sum.weight, alpha: 1)
-        return color.saturationComponent > 0.08 ? color : nil
+        let ranked = slices.indices.filter { slices[$0].weight > 0 }.sorted { slices[$0].weight > slices[$1].weight }
+        let colorful = slices.reduce(0) { $0 + $1.weight }
+        guard let first = ranked.first, colorful > Double(side * side) * 0.02 else { return nil }
+        func color(_ k: Int) -> NSColor {
+            let slice = slices[k]
+            return NSColor(srgbRed: slice.r / slice.weight, green: slice.g / slice.weight, blue: slice.b / slice.weight, alpha: 1)
+        }
+        func apart(_ a: Int, _ b: Int) -> Int { min(abs(a - b), 12 - abs(a - b)) }
+
+        if let second = ranked.dropFirst().first(where: { apart($0, first) >= 2 && slices[$0].weight >= slices[first].weight * 0.12 }) {
+            let firstRow = slices[first].row / slices[first].weight, secondRow = slices[second].row / slices[second].weight
+            let (top, bottom) = firstRow <= secondRow ? (first, second) : (second, first)
+            return [lifted(color(top)), lifted(color(bottom))]
+        }
+        let main = color(first)
+        let tint = Color(hue: (main.hueComponent + 0.06).truncatingRemainder(dividingBy: 1),
+                         saturation: max(main.saturationComponent * 0.6, 0.3), brightness: 1)
+        return [tint, lifted(main)]
     }
 
     private static func lifted(_ color: NSColor) -> Color {
@@ -213,12 +228,6 @@ final class MediaController {
               brightness: max(color.brightnessComponent, 0.9))
     }
 
-    /// How different two colors look, roughly: hue around the circle, weighted by how colorful they are.
-    private static func distance(_ a: NSColor, _ b: NSColor) -> Double {
-        let hue = abs(a.hueComponent - b.hueComponent)
-        let around = min(hue, 1 - hue) * 2   // 0...1
-        return around * min(a.saturationComponent, b.saturationComponent) + abs(a.brightnessComponent - b.brightnessComponent) * 0.3
-    }
 
     /// Fixed state for snapshots, with a placeholder cover.
     func loadSample(title: String, artist: String, duration: Double, elapsed: Double, playing: Bool) {

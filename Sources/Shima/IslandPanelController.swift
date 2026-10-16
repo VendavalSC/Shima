@@ -1,5 +1,6 @@
 import AppKit
 import CoreAudio
+import LocalAuthentication
 import SwiftUI
 
 /// Borderless panel flush with the top-center of the main display, above the menu bar; only the
@@ -25,7 +26,9 @@ final class IslandPanel: NSPanel {
         // Setting it (even back to false) switches that off, and with it drag-and-drop.
     }
 
-    override var canBecomeKey: Bool { false }
+    /// Only while a field in the notch is being typed in; the app in front stays in front.
+    var takesKeyboard = false
+    override var canBecomeKey: Bool { takesKeyboard }
     override var canBecomeMain: Bool { false }
 
     /// It sits over the menu bar on purpose; never let AppKit push it below.
@@ -140,6 +143,7 @@ final class IslandPanelController {
         model.onDropFiles = { [weak self] urls, target in self?.receive(urls, on: target) }
         model.onNotificationAction = { [weak self] action in self?.handle(action) }
         model.onEjectDrive = { [weak self] in self?.ejectShownDrive() }
+        model.onTyping = { [weak self] typing in self?.setTyping(typing) }
         replier.onText = { [weak self] text in self?.model.replyText = text }
         replier.onEnd = { [weak self] sent in self?.replyEnded(sent: sent) }
         panel.contentView = host
@@ -216,6 +220,37 @@ final class IslandPanelController {
         }
     }
 
+    // MARK: Touch ID
+
+    private var touchIDDismissal: DispatchWorkItem?
+
+    /// Mirrors a Touch ID prompt: the square drops when it appears, and a checkmark shows for a moment
+    /// once a finger is accepted. Cancelled, it just folds back up. Not while locked or hidden for a
+    /// fullscreen app.
+    func showTouchID(_ event: TouchIDMonitor.Event) {
+        switch event {
+        case .began:
+            guard !isSuppressed, model.lockPhase == .unlocked, !model.isDropping else { return }
+            touchIDDismissal?.cancel()
+            withAnimation(Motion.open) { model.touchID = .waiting }
+        case .retry:
+            guard model.touchID == .waiting else { return }
+            model.touchIDMisses += 1
+            if settings.haptics { NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now) }
+        case .ended(let succeeded):
+            guard model.touchID == .waiting else { return }
+            guard succeeded else {
+                withAnimation(Motion.close) { model.touchID = nil }
+                return
+            }
+            model.touchID = .accepted
+            if settings.haptics { NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now) }
+            schedule(&touchIDDismissal, after: 1.1) { [weak self] in
+                withAnimation(Motion.close) { self?.model.touchID = nil }
+            }
+        }
+    }
+
     private var driveDismissal: DispatchWorkItem?
     /// Ejects through the drive monitor; set by the app.
     var ejectDrive: ((DriveAlert, @escaping (Bool) -> Void) -> Void)?
@@ -269,6 +304,9 @@ final class IslandPanelController {
             model.notification = notification
         }
         dismissNotification(after: Self.notificationDuration)
+        if ProcessInfo.processInfo.environment["SHIMA_DEMO_SWIPE"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.demoNotificationSwipe() }
+        }
         if let text = ProcessInfo.processInfo.environment["SHIMA_DEMO_REPLY"], notification.canReply {
             // For testing replies without typing: reply on its own, then type and press Return.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.handle(.reply) }
@@ -289,6 +327,7 @@ final class IslandPanelController {
         model.notification = nil
         model.replyPhase = .none
         model.replyText = ""
+        model.notificationLift = 0
     }
 
     private func handle(_ action: NotificationAction) {
@@ -413,6 +452,7 @@ final class IslandPanelController {
     /// With "Show on the lock screen" off, the notch simply fades away until unlock.
     func screenLocked() {
         isLocked = true
+        model.touchID = nil   // the lock screen has its own fingerprint
         endDropMode()
         setExpanded(false)
         guard settings.showOnLockScreen else {
@@ -426,6 +466,36 @@ final class IslandPanelController {
             guard let self, self.isLocked else { return }
             withAnimation(.snappy) { self.model.lockPhase = .locked }
         }
+        watchFingerprint()
+    }
+
+    private var lockSensor: UUID?
+
+    /// On Macs with Touch ID, the fingerprint beside the padlock follows the sensor while locked.
+    private func watchFingerprint() {
+        guard lockSensor == nil, LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil) else { return }
+        withAnimation(.snappy) { model.lockFinger = .resting }
+        lockSensor = TouchIDSensor.shared.start { [weak self] event in
+            guard let self, self.isLocked, let finger = self.model.lockFinger else { return }
+            switch event {
+            case .fingerDown where finger == .resting:
+                withAnimation(Motion.compact) { self.model.lockFinger = .reading }
+            case .tryAgain where finger != .matched:
+                self.model.lockMisses += 1
+            case .matched:
+                withAnimation(.snappy) { self.model.lockFinger = .matched }
+                if self.settings.haptics { NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now) }
+            case .cancelled where finger == .reading, .armed where finger == .reading:
+                withAnimation(Motion.compact) { self.model.lockFinger = .resting }
+            default:
+                break
+            }
+        }
+    }
+
+    private func stopWatchingFingerprint() {
+        TouchIDSensor.shared.stop(lockSensor)
+        lockSensor = nil
     }
 
     /// Springs the shackle open, holds a beat, then returns to the normal notch.
@@ -435,8 +505,18 @@ final class IslandPanelController {
             return
         }
         isLocked = false
+        stopWatchingFingerprint()
+        model.lockMusicKept = false
         restore()
-        guard model.lockPhase != .unlocked else { return }
+        guard model.lockPhase != .unlocked else {
+            model.lockFinger = nil
+            return
+        }
+        // The fingerprint turns into a check as the padlock opens; unlocked some other way (a password,
+        // an Apple Watch), the padlock simply opens. The unlock can be announced a moment before the
+        // sensor's match reaches Shima, so a finger still being read counts as matched.
+        let byFinger = model.lockFinger == .matched || model.lockFinger == .reading
+        withAnimation(.snappy) { model.lockFinger = byFinger ? .matched : nil }
         withAnimation(.snappy) { model.lockPhase = .unlocking }
         // Leave the lock screen's space just after it's gone, so nothing flickers on the way out.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
@@ -445,7 +525,10 @@ final class IslandPanelController {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
             guard let self, !self.isLocked else { return }
-            withAnimation(Motion.close) { self.model.lockPhase = .unlocked }
+            withAnimation(Motion.close) {
+                self.model.lockPhase = .unlocked
+                self.model.lockFinger = nil
+            }
             if self.isSuppressed { self.fade(visible: false) }
         }
     }
@@ -491,7 +574,17 @@ final class IslandPanelController {
     private func place() {
         guard let screen else { return }
         let geometry = NotchGeometry(screen: screen)
-        if model.geometry != geometry { model.geometry = geometry }
+        if model.geometry != geometry {
+            // Switching between notch and island morphs one into the other; other changes (a new
+            // display, a different menu bar) just apply.
+            var restyled = model.geometry
+            restyled.style = geometry.style
+            if restyled == geometry {
+                withAnimation(Motion.morph) { model.geometry = geometry }
+            } else {
+                model.geometry = geometry
+            }
+        }
         let frame = screen.frame
         panel.setFrame(NSRect(x: frame.midX - Metrics.window.width / 2,
                               y: frame.maxY - Metrics.window.height,
@@ -567,6 +660,20 @@ final class IslandPanelController {
     private var mouseIsDown: Bool { NSEvent.pressedMouseButtons & 1 != 0 }
 
     private func mouseWentDown(inside: Bool) {
+        // On the lock screen a click brings the lock screen's own window forward; stay in front of it.
+        if isLocked, settings.showOnLockScreen {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                guard let self, self.isLocked else { return }
+                self.panel.orderFrontRegardless()
+                NotchSpace.raiseOverLockScreen(self.panel)
+            }
+        }
+        // Clicking elsewhere while adding a reminder keeps what was typed, like Reminders does.
+        if !inside, model.isTyping {
+            let typed = model.typedText.trimmingCharacters(in: .whitespaces)
+            if !typed.isEmpty { RemindersMonitor.shared.add(typed) }
+            setTyping(false)
+        }
         dragChangeCount = NSPasteboard(name: .drag).changeCount
         dragStartedInside = inside
         // A click on a notification opens it; a click on the closed notch opens the notch (the only
@@ -574,7 +681,7 @@ final class IslandPanelController {
         if inside, !model.isExpanded, !isSuppressed, model.lockPhase == .unlocked,
            content.spec(in: model.geometry).bodyRect.contains(pointer) {
             // A notification handles its own clicks (open, Reply, send).
-            if ![.notification, .notificationReply, .drive].contains(content) { setExpanded(true) }
+            if ![.notification, .notificationReply, .drive, .agentAlert].contains(content) { setExpanded(true) }
         }
         guard !inside, dragWatch == nil else { return }
         dragWatch = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] timer in
@@ -661,10 +768,27 @@ final class IslandPanelController {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
+    /// The panel takes the keyboard while a field in the notch is in use, without bringing Shima to
+    /// the front, and gives it back after.
+    private func setTyping(_ typing: Bool) {
+        guard typing != model.isTyping else { return }
+        if typing {
+            panel.takesKeyboard = true
+            panel.makeKey()
+            withAnimation(.snappy(duration: 0.25)) { model.isTyping = true }
+        } else {
+            withAnimation(.snappy(duration: 0.25)) { model.isTyping = false }
+            model.typedText = ""
+            panel.resignKey()
+            panel.takesKeyboard = false
+            pointerMoved(dragging: false)
+        }
+    }
+
     func setExpanded(_ expanded: Bool) {
         pendingExpand = nil
         pendingCollapse = nil
-        guard model.isExpanded != expanded, expanded ? !isSuppressed : !model.isMenuOpen else { return }
+        guard model.isExpanded != expanded, expanded ? !isSuppressed : !model.isMenuOpen && !model.isTyping else { return }
         if expanded {
             model.batteryAlert = nil
             model.deviceAlert = nil
@@ -778,6 +902,7 @@ final class IslandPanelController {
     /// the ends; vertical scrolls pass through (the shelf's grid scrolls vertically). Over the
     /// timer's ruler, scrolling slides the ruler instead.
     private func handleScroll(_ event: NSEvent) -> NSEvent? {
+        if content == .notification || content == .notificationReply { return handleNotificationSwipe(event) }
         guard content == .open else { return event }
         if event.momentumPhase != [] { return swipePaging || swipeSetsTimer ? nil : event }
         if event.phase == [], isOverTimerRuler {
@@ -843,6 +968,63 @@ final class IslandPanelController {
         default:
             return event
         }
+    }
+
+    /// A swipe up this far sends a notification away; less, and it springs back.
+    private static let notificationSwipeThreshold: CGFloat = 28
+
+    /// Two fingers swiping up over a notification push it back into the notch, following the fingers;
+    /// let go past a short distance and it's gone. Not while replying.
+    private func handleNotificationSwipe(_ event: NSEvent) -> NSEvent? {
+        guard model.replyPhase == .none else { return event }
+        if event.momentumPhase != [] { return nil }
+        switch event.phase {
+        case .began:
+            swipeDistance = 0
+            swipeActive = true
+            swipePastThreshold = false
+        case .changed where swipeActive:
+            notificationSwipe(by: event.isDirectionInvertedFromDevice ? -event.scrollingDeltaY : event.scrollingDeltaY)
+        case .ended, .cancelled:
+            guard swipeActive else { return nil }
+            swipeActive = false
+            notificationSwipeEnded()
+        default:
+            break
+        }
+        return nil
+    }
+
+    /// The fingers moved up (positive) or down by this much.
+    private func notificationSwipe(by fingersUp: CGFloat) {
+        swipeDistance += fingersUp
+        model.notificationLift = max(0, swipeDistance)
+        let past = swipeDistance >= Self.notificationSwipeThreshold
+        if past != swipePastThreshold {
+            swipePastThreshold = past
+            if past && settings.haptics { NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now) }
+        }
+    }
+
+    private func notificationSwipeEnded() {
+        if swipeDistance >= Self.notificationSwipeThreshold {
+            notificationDismissal?.cancel()
+            notificationDismissal = nil
+            Log.notify.info("notification swiped away")
+            withAnimation(Motion.close) { clearNotification() }
+        } else {
+            withAnimation(.snappy(duration: 0.3)) { model.notificationLift = 0 }
+        }
+    }
+
+    /// For testing without a trackpad: swipe the shown notification up in small steps, then let go.
+    func demoNotificationSwipe() {
+        swipeDistance = 0
+        swipePastThreshold = false
+        for step in 1...12 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(step) * 0.05) { [weak self] in self?.notificationSwipe(by: 4) }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.notificationSwipeEnded() }
     }
 
     /// The pointer is over the timer's ruler, on the Timer page with no timer set.

@@ -124,6 +124,7 @@ final class AppSettings {
     var customNotchHeight = Store.double(.customNotchHeight, default: 32) { didSet { Store.set(customNotchHeight, .customNotchHeight) } }
     var hideInFullscreen = Store.bool(.hideInFullscreen, default: true) { didSet { Store.set(hideInFullscreen, .hideInFullscreen) } }
     var showOnLockScreen = Store.bool(.showOnLockScreen, default: true) { didSet { Store.set(showOnLockScreen, .showOnLockScreen) } }
+    var lockScreenMusic = Store.bool(.lockScreenMusic, default: true) { didSet { Store.set(lockScreenMusic, .lockScreenMusic) } }
 
     // Battery
     var chargingActivity = Store.bool(.chargingActivity, default: true) { didSet { Store.set(chargingActivity, .chargingActivity) } }
@@ -135,6 +136,9 @@ final class AppSettings {
     // More activities
     var capsLockActivity = Store.bool(.capsLockActivity, default: true) { didSet { Store.set(capsLockActivity, .capsLockActivity) } }
     var driveActivity = Store.bool(.driveActivity, default: true) { didSet { Store.set(driveActivity, .driveActivity) } }
+    var touchIDActivity = Store.bool(.touchIDActivity, default: true) { didSet { Store.set(touchIDActivity, .touchIDActivity) } }
+    /// Coding agents (once connected): working in the closed notch, and when they need you or finish.
+    var agentActivity = Store.bool(.agentActivity, default: true) { didSet { Store.set(agentActivity, .agentActivity) } }
     /// Off until asked for: it needs Full Disk Access.
     var focusActivity = Store.bool(.focusActivity, default: false) { didSet { Store.set(focusActivity, .focusActivity) } }
 
@@ -144,6 +148,15 @@ final class AppSettings {
     // Calendar
     var calendarActivity = Store.bool(.calendarActivity, default: false) { didSet { Store.set(calendarActivity, .calendarActivity) } }
     var calendarPage = Store.bool(.calendarPage, default: false) { didSet { Store.set(calendarPage, .calendarPage) } }
+    var remindersPage = Store.bool(.remindersPage, default: false) { didSet { Store.set(remindersPage, .remindersPage) } }
+    /// Off until turned on: the only page that goes online (Open-Meteo).
+    var weatherPage = Store.bool(.weatherPage, default: false) { didSet { Store.set(weatherPage, .weatherPage) } }
+    /// A city to show the weather for, instead of the Mac's location.
+    var weatherCity: WeatherCity? = Store.decoded(.weatherCity) {
+        didSet {
+            if let weatherCity { Store.encode(weatherCity, .weatherCity) } else { UserDefaults.standard.removeObject(forKey: Store.Key.weatherCity.rawValue) }
+        }
+    }
 
     // Pages
     var timerPage = Store.bool(.timerPage, default: true) { didSet { Store.set(timerPage, .timerPage) } }
@@ -192,8 +205,8 @@ final class AppSettings {
 enum Store {
     enum Key: String {
         case menuBarIcon, openOnHover, hoverDelay, haptics, notchStyle, displays, hideWhenIdle, notchWidth, alertDisplay, pageOrder, notchHeightMode, customNotchHeight
-        case hideInFullscreen, showOnLockScreen, musicWhenClosed, waveformColor, shelf, airDropTarget
-        case chargingActivity, lowBatteryActivity, deviceActivity, capsLockActivity, driveActivity, focusActivity, notifications, calendarActivity, calendarLead, calendarPage, timerPage, systemPage
+        case hideInFullscreen, showOnLockScreen, lockScreenMusic, musicWhenClosed, waveformColor, shelf, airDropTarget
+        case chargingActivity, lowBatteryActivity, deviceActivity, capsLockActivity, driveActivity, touchIDActivity, agentActivity, focusActivity, notifications, calendarActivity, calendarLead, calendarPage, remindersPage, weatherPage, weatherCity, timerPage, systemPage
     }
 
     static func bool(_ key: Key, default value: Bool) -> Bool {

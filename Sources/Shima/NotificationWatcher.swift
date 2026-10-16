@@ -44,6 +44,7 @@ final class NotificationWatcher {
     @ObservationIgnored private var observer: AXObserver?
     @ObservationIgnored private var observedPID: pid_t = 0
     @ObservationIgnored private var tokens: [NSObjectProtocol] = []
+    @ObservationIgnored private var notificationCenterWatch: NSKeyValueObservation?
     @ObservationIgnored private var seen: [String] = []
     /// Banner windows moved out of sight, with where they were.
     @ObservationIgnored private var hidden: [(window: AXUIElement, origin: CGPoint)] = []
@@ -60,11 +61,7 @@ final class NotificationWatcher {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self?.refreshTrust() }
         })
         // Notification Center can restart; follow it.
-        tokens.append(NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) { [weak self] note in
-            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-            if app?.bundleIdentifier == Self.notificationCenterID { self?.update() }
-        })
+        notificationCenterWatch = watchApp(Self.notificationCenterID) { [weak self] _ in self?.update() }
     }
 
     /// Asks for Accessibility: macOS shows its prompt, which leads to Privacy & Security.
@@ -83,7 +80,7 @@ final class NotificationWatcher {
 
     private func update() {
         guard AppSettings.shared.notifications, isTrusted,
-              let app = NSRunningApplication.runningApplications(withBundleIdentifier: Self.notificationCenterID).first else {
+              let app = NSRunningApplication.runningApplications(withBundleIdentifier: Self.notificationCenterID).first(where: { !$0.isTerminated }) else {
             stop()
             return
         }

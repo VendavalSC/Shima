@@ -30,6 +30,14 @@ enum Snapshot {
         AppSettings.shared.shelfEnabled = true
         AppSettings.shared.timerPage = true
         AppSettings.shared.systemPage = true
+        AppSettings.shared.remindersPage = true
+        RemindersMonitor.shared.loadSample(sampleReminders())
+        AppSettings.shared.weatherPage = true
+        let hour = Calendar.current.date(bySetting: .minute, value: 0, of: Date()) ?? Date()
+        WeatherMonitor.shared.loadSample(Forecast(place: "Barcelona", temperature: 21, code: 2, isDay: true, high: 24, low: 15,
+            hours: [(1, 22, 1), (2, 22, 2), (3, 21, 3), (4, 19, 61), (5, 18, 80)].map {
+                Forecast.Hour(time: hour.addingTimeInterval(Double($0.0) * 3600), temperature: $0.1, code: $0.2, isDay: true)
+            }, fetched: .distantFuture))
         let pad = Metrics.padding
         let chat = NotchNotification(id: "3", app: "Messages", title: "Alex Morgan", subtitle: "",
                                      body: "Nachos at seven? I'll bring the cheese.", banner: AXUIElementCreateSystemWide(),
@@ -39,6 +47,9 @@ enum Snapshot {
             State(name: "music"),
             State(name: "shelf", playing: false, shelf: true),
             State(name: "locked", lock: .locked),
+            State(name: "locked-touchid", playing: false, lock: .locked),
+            State(name: "locked-reading", playing: false, lock: .locked),
+            State(name: "locked-matched", playing: false, lock: .unlocking),
             State(name: "event", event: UpcomingEvent(id: "1", title: "Design review", start: Date().addingTimeInterval(8 * 60 - 1), color: .orange)),
             State(name: "event-now", playing: false, event: UpcomingEvent(id: "2", title: "Weekly sync with the team", start: Date().addingTimeInterval(-30), color: .blue)),
             State(name: "charging", battery: BatteryAlert(kind: .charging, level: 82, isCharging: true)),
@@ -90,6 +101,9 @@ enum Snapshot {
             State(name: "device-compact", device: DeviceAlert(symbol: "airpodspro", name: "AirPods Pro", battery: 85,
                                                               isBanner: false)),
             State(name: "system", expanded: true, section: .system),
+            State(name: "open-reminders", expanded: true, section: .reminders),
+            State(name: "open-weather", expanded: true, section: .weather),
+            State(name: "agent-working", playing: false),
             State(name: "open-shelf", playing: false, shelf: true, expanded: true, section: .shelf),
             State(name: "open-shelf-empty", playing: false, expanded: true, section: .shelf),
             State(name: "open-nothing", playing: false, expanded: true),
@@ -112,8 +126,10 @@ enum Snapshot {
             let shelf = ShelfStore(persists: false)
             if state.shelf { shelf.add(sampleFiles()) }
             let model = IslandModel()
+            model.geometry.style = style   // whatever this display is set to in Settings
             model.isExpanded = state.expanded
             model.lockPhase = state.lock
+            model.lockFinger = ["locked-touchid": .resting, "locked-reading": .reading, "locked-matched": .matched][state.name]
             model.isDropping = state.dropping
             model.dropTarget = state.dropTarget
             model.pointer = state.hover
@@ -126,6 +142,9 @@ enum Snapshot {
             model.replyPhase = state.reply
             model.replyText = state.replyText
             model.upcomingEvent = state.event
+            AgentMonitor.shared.loadSample(state.name == "agent-working"
+                ? [AgentSession(id: "a", agent: "claude", project: "Shima", state: .working,
+                                since: Date().addingTimeInterval(-134), lastEvent: Date())] : [])
             let calendar = CalendarMonitor()
             if state.section == .calendar || state.name.hasPrefix("swipe") {
                 calendar.loadSample(today: Snapshot.sampleEvents(), tomorrow: nil)
@@ -163,8 +182,45 @@ enum Snapshot {
             }
         }
         }
+        renderMorph(to: directory)
         AppSettings.shared.notchStyle = .notch
         return true
+    }
+
+    /// The notch turning into the island, as frames: every size and corner part way between the two.
+    static func renderMorph(to directory: String) {
+        var notch = NotchGeometry.main, island = NotchGeometry.main
+        notch.style = .notch
+        island.style = .island
+        func mix(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat { a + (b - a) * t }
+        func mix(_ a: CGSize, _ b: CGSize, _ t: CGFloat) -> CGSize { CGSize(width: mix(a.width, b.width, t), height: mix(a.height, b.height, t)) }
+        for (name, from, to) in [("idle", notch.idle, island.idle), ("open", notch.expanded, island.expanded)] {
+            for step in 0...6 {
+                let t = CGFloat(step) / 6
+                let body = mix(from.body, to.body, t), ear = mix(from.ear, to.ear, t)
+                let view = NotchShape(ear: ear, bottom: mix(from.bottom, to.bottom, t), top: mix(from.top, to.top, t))
+                    .fill(.black)
+                    .frame(width: body.width + 2 * ear.width, height: body.height)
+                    .padding(.top, mix(from.topInset, to.topInset, t))
+                    .frame(width: Metrics.window.width, height: name == "idle" ? 60 : 190, alignment: .top)
+                    .background(Color(red: 0.36, green: 0.42, blue: 0.52))
+                let renderer = ImageRenderer(content: view)
+                renderer.scale = 2
+                if let image = renderer.cgImage, let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) {
+                    try? png.write(to: URL(fileURLWithPath: directory).appendingPathComponent("morph-\(name)-\(step).png"))
+                }
+            }
+        }
+    }
+
+    static func sampleReminders() -> [ReminderItem] {
+        let today = Calendar.current.startOfDay(for: Date())
+        return [
+            ReminderItem(id: "r1", title: "Send the invoice", due: today.addingTimeInterval(-86_400), hasTime: false, color: .orange),
+            ReminderItem(id: "r2", title: "Call Ana", due: today.addingTimeInterval(17 * 3600), hasTime: true, color: .blue),
+            ReminderItem(id: "r3", title: "Buy oat milk", due: nil, hasTime: false, color: .orange),
+            ReminderItem(id: "r4", title: "Book the dentist", due: nil, hasTime: false, color: .orange),
+        ]
     }
 
     static func sampleEvents() -> [CalendarEntry] {

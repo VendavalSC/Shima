@@ -33,6 +33,10 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>NSCalendarsFullAccessUsageDescription</key><string>Shima shows your next event in the notch a few minutes before it starts.</string>
     <key>NSCalendarsUsageDescription</key><string>Shima shows your next event in the notch a few minutes before it starts.</string>
     <key>NSHighResolutionCapable</key><true/>
+    <key>NSLocationUsageDescription</key><string>Shima shows the weather where you are on the Weather page.</string>
+    <key>NSLocationWhenInUseUsageDescription</key><string>Shima shows the weather where you are on the Weather page.</string>
+    <key>NSRemindersFullAccessUsageDescription</key><string>Shima shows today's reminders on the Reminders page, and lets you tick them off and add new ones.</string>
+    <key>NSRemindersUsageDescription</key><string>Shima shows today's reminders on the Reminders page, and lets you tick them off and add new ones.</string>
 </dict>
 </plist>
 PLIST

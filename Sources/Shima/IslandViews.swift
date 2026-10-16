@@ -3,20 +3,27 @@ import SwiftUI
 /// What the notch is showing. Closed, it shows the most important thing going on (lock, music,
 /// shelf) in wings beside the notch; open, it shows one section (Now Playing or Shelf).
 enum NotchContent: Equatable {
-    case idle, music, shelf, lock, drop, open, notification, notificationReply, status, battery, deviceBanner, device,
-         drive, event, timer
+    case idle, music, shelf, lock, drop, open, touchID, notification, notificationReply, status, battery, deviceBanner,
+         device, drive, event, timer, agent, agentAlert, lockMusic
 
     /// Closed, the most time-sensitive thing wins: a battery alert, a timer that just finished, an
     /// event about to start, a running timer, then music, then the shelf.
     static func resolve(model: IslandModel, media: MediaController, shelf: ShelfStore, timer: NotchTimer) -> NotchContent {
-        if model.lockPhase != .unlocked { return .lock }
+        if model.lockPhase != .unlocked {
+            // Music keeps its controls on the lock screen, until a finger is on the sensor.
+            let music = AppSettings.shared.lockScreenMusic && model.lockPhase == .locked && media.hasMedia
+                && (media.isPlaying || model.lockMusicKept)
+            return music && (model.lockFinger ?? .resting) == .resting ? .lockMusic : .lock
+        }
         if model.isDropping { return .drop }
         if model.isExpanded { return .open }
+        if model.touchID != nil { return .touchID }
         if let notification = model.notification {
             // A chat grows its reply box under the pointer, and keeps it while you reply.
             let showsBox = model.replyPhase != .none || (notification.canReply && model.pointer != nil)
             return showsBox ? .notificationReply : .notification
         }
+        if AppSettings.shared.agentActivity, AgentMonitor.shared.alert != nil { return .agentAlert }
         if model.statusAlert != nil { return .status }
         if model.batteryAlert != nil { return .battery }
         if let device = model.deviceAlert { return device.isBanner ? .deviceBanner : .device }
@@ -29,6 +36,7 @@ enum NotchContent: Equatable {
     static func closed(media: MediaController, shelf: ShelfStore, timer: NotchTimer) -> NotchContent {
         let settings = AppSettings.shared
         if timer.isActive { return .timer }
+        if settings.agentActivity && !AgentMonitor.shared.working.isEmpty { return .agent }
         if settings.showMusicWhenClosed && media.hasMedia && media.isPlaying { return .music }
         return settings.shelfEnabled && !shelf.isEmpty ? .shelf : .idle
     }
@@ -37,11 +45,13 @@ enum NotchContent: Equatable {
         switch self {
         case .idle: geometry.idle
         case .music, .shelf, .lock, .device: geometry.compact
-        case .battery, .timer, .status: geometry.alert
+        case .battery, .timer, .status, .agent, .agentAlert: geometry.alert
         case .deviceBanner, .drive: geometry.banner
         case .notification: geometry.notificationBanner
         case .notificationReply: geometry.notificationReplyBanner
         case .event: geometry.event
+        case .touchID: geometry.touchIDSquare
+        case .lockMusic: geometry.lockMusicBanner
         case .drop: geometry.drop
         case .open: geometry.expanded
         }
@@ -61,7 +71,8 @@ struct IslandRootView: View {
 
     var body: some View {
         let content = NotchContent.resolve(model: model, media: media, shelf: shelf, timer: timer)
-        let spec = content.spec(in: model.geometry)
+        let lift = content == .notification || content == .notificationReply ? model.notificationLift : 0
+        let spec = content.spec(in: model.geometry).shortened(by: lift, to: model.geometry.closedHeight)
         let shape = NotchShape(ear: spec.ear, bottom: spec.bottom, top: spec.top)
 
         ZStack(alignment: .top) {
@@ -82,6 +93,23 @@ struct IslandRootView: View {
                 ShelfCompact(count: shelf.items.count)
                     .frame(width: spec.body.width, height: spec.body.height)
                     .transition(.notchContent(in: Motion.compactIn))
+            case .agent:
+                AgentWorking(sessions: AgentMonitor.shared.working)
+                    .frame(width: spec.body.width, height: spec.body.height)
+                    .transition(.notchContent(in: Motion.compactIn))
+            case .agentAlert:
+                if let session = AgentMonitor.shared.alert {
+                    AgentAlert(session: session)
+                        .id(session.id + "\(session.state)")
+                        .frame(width: spec.body.width, height: spec.body.height)
+                        .transition(.notchContent(in: Motion.compactIn))
+                }
+            case .touchID:
+                if let phase = model.touchID {
+                    TouchIDSquare(phase: phase, misses: model.touchIDMisses)
+                        .frame(width: spec.body.width, height: spec.body.height)
+                        .transition(.notchContent(in: Motion.contentIn))
+                }
             case .status:
                 if let alert = model.statusAlert {
                     StatusCompact(alert: alert)
@@ -102,9 +130,13 @@ struct IslandRootView: View {
                 }
             case .notification, .notificationReply:
                 if let notification = model.notification {
+                    // Pushed up by a swipe, the message rises with the fingers and fades.
                     NotificationBanner(model: model, notification: notification)
                         .id(notification.id)
-                        .frame(width: spec.body.width, height: spec.body.height)
+                        .frame(width: spec.body.width, height: content.spec(in: model.geometry).body.height)
+                        .offset(y: -lift * 0.5)
+                        .opacity(1 - min(1, lift / 70))
+                        .frame(width: spec.body.width, height: spec.body.height, alignment: .top)
                         .transition(.notchContent(in: Motion.compactIn))
                 }
             case .deviceBanner:
@@ -129,8 +161,12 @@ struct IslandRootView: View {
                         .frame(width: spec.body.width, height: spec.body.height)
                         .transition(.notchContent(in: Motion.compactIn))
                 }
+            case .lockMusic:
+                LockMusicBanner(model: model, media: media)
+                    .frame(width: spec.body.width, height: spec.body.height)
+                    .transition(.notchContent(in: Motion.compactIn))
             case .lock:
-                LockCompact(open: model.lockPhase.showsOpenShackle)
+                LockCompact(open: model.lockPhase.showsOpenShackle, finger: model.lockFinger, misses: model.lockMisses)
                     .frame(width: spec.body.width, height: spec.body.height)
                     .transition(.notchContent(in: Motion.compactIn))
             case .idle:
@@ -150,6 +186,10 @@ struct IslandRootView: View {
         // too; opening and closing bring their own animation.
         .animation(Motion.compact, value: NotchContent.closed(media: media, shelf: shelf, timer: timer))
         .animation(Motion.compact, value: shelf.items.count)
+        // Resizing it in Settings springs to the new size, like switching between notch and island.
+        .animation(Motion.morph, value: AppSettings.shared.notchWidth)
+        .animation(Motion.morph, value: AppSettings.shared.notchHeightMode)
+        .animation(Motion.morph, value: AppSettings.shared.customNotchHeight)
         .padding(.top, spec.topInset)
         .environment(\.notchGeometry, model.geometry)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -184,27 +224,20 @@ struct NotchShape: Shape {
         let eh = min(ear.height, rect.height / 2)
         let tr = min(top, rect.height / 2, (rect.width - 2 * ew) / 2)
         let bw = min(bottom.width, (rect.width - 2 * ew) / 2)
-        let bh = min(bottom.height, rect.height - max(eh, tr))
+        let bh = min(bottom.height, rect.height - eh - tr)
         let left = rect.minX + ew        // body edges
         let right = rect.maxX - ew
         let top = rect.minY
         let base = rect.maxY
 
+        // Each top corner is one curve that's a concave flare into the top edge with ears (the notch),
+        // a rounded corner with a top radius (the island), and a blend of the two in between, so one
+        // can turn into the other.
         var path = Path()
-        if tr > 0 {
-            // Island: convex top corners.
-            path.move(to: CGPoint(x: left + tr, y: top))
-            path.addLine(to: CGPoint(x: right - tr, y: top))
-            path.addCurve(to: CGPoint(x: right, y: top + tr),
-                          control1: CGPoint(x: right - 0.45 * tr, y: top),
-                          control2: CGPoint(x: right, y: top + 0.45 * tr))
-        } else {
-            // Notch: concave flares into the top edge.
-            path.move(to: CGPoint(x: rect.maxX, y: top))
-            path.addCurve(to: CGPoint(x: right, y: top + eh),
-                          control1: CGPoint(x: rect.maxX - 0.55 * ew, y: top),
-                          control2: CGPoint(x: right, y: top + 0.45 * eh))
-        }
+        path.move(to: CGPoint(x: right + ew - tr, y: top))
+        path.addCurve(to: CGPoint(x: right, y: top + eh + tr),
+                      control1: CGPoint(x: right + 0.45 * ew - 0.45 * tr, y: top),
+                      control2: CGPoint(x: right, y: top + 0.45 * eh + 0.45 * tr))
         path.addLine(to: CGPoint(x: right, y: base - bh))
         path.addCurve(to: CGPoint(x: right - bw, y: base),
                       control1: CGPoint(x: right, y: base - 0.45 * bh),
@@ -213,17 +246,10 @@ struct NotchShape: Shape {
         path.addCurve(to: CGPoint(x: left, y: base - bh),
                       control1: CGPoint(x: left + 0.45 * bw, y: base),
                       control2: CGPoint(x: left, y: base - 0.45 * bh))
-        if tr > 0 {
-            path.addLine(to: CGPoint(x: left, y: top + tr))
-            path.addCurve(to: CGPoint(x: left + tr, y: top),
-                          control1: CGPoint(x: left, y: top + 0.45 * tr),
-                          control2: CGPoint(x: left + 0.45 * tr, y: top))
-        } else {
-            path.addLine(to: CGPoint(x: left, y: top + eh))
-            path.addCurve(to: CGPoint(x: rect.minX, y: top),
-                          control1: CGPoint(x: left, y: top + 0.45 * eh),
-                          control2: CGPoint(x: rect.minX + 0.55 * ew, y: top))
-        }
+        path.addLine(to: CGPoint(x: left, y: top + eh + tr))
+        path.addCurve(to: CGPoint(x: left - ew + tr, y: top),
+                      control1: CGPoint(x: left, y: top + 0.45 * eh + 0.45 * tr),
+                      control2: CGPoint(x: left - 0.45 * ew + 0.45 * tr, y: top))
         path.closeSubpath()
         return path
     }
@@ -688,19 +714,273 @@ private struct BatteryGlyph: View {
     }
 }
 
-/// The padlock, trailing; flipping `open` animates the shackle.
+/// Coding agents at work: a small spinning arc and the project on the leading side, how long it's
+/// been going on the trailing side (or how many are working, with more than one).
+private struct AgentWorking: View {
+    @Environment(\.notchGeometry) var geometry
+    let sessions: [AgentSession]
+
+    var body: some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 7) {
+                AgentSpinner()
+                Text(sessions.count == 1 ? sessions[0].project : "\(sessions.count) agents")
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: geometry.leadingWingWidth, alignment: .leading)
+            Spacer(minLength: 0)
+            if let first = sessions.min(by: { $0.since < $1.since }) {
+                TimelineView(.periodic(from: first.since, by: 1)) { context in
+                    Text(Duration.seconds(max(0, context.date.timeIntervalSince(first.since)))
+                        .formatted(.time(pattern: .minuteSecond)))
+                        .foregroundStyle(.white.opacity(0.55))
+                        .monospacedDigit()
+                }
+            }
+        }
+        .font(.system(size: Metrics.compactSymbol, weight: .semibold))
+        .padding(.horizontal, geometry.compactInset + 4)
+    }
+}
+
+/// A short arc going round, in the agents' warm orange.
+private struct AgentSpinner: View {
+    var body: some View {
+        TimelineView(.animation) { context in
+            let turn = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.1) / 1.1
+            Circle()
+                .trim(from: 0, to: 0.62)
+                .stroke(AngularGradient(colors: [.orange.opacity(0), .orange], center: .center,
+                                        startAngle: .degrees(0), endAngle: .degrees(223)),
+                        style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+                .rotationEffect(.degrees(turn * 360))
+        }
+        .frame(width: 12, height: 12)
+    }
+}
+
+/// A coding agent that needs you (orange, until you answer) or just finished (a green check, for a
+/// few seconds). Clicking brings up the app it runs in.
+private struct AgentAlert: View {
+    @Environment(\.notchGeometry) var geometry
+    let session: AgentSession
+
+    private var needsYou: Bool { session.state == .needsYou }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: needsYou ? "hand.raised.fill" : "checkmark.circle.fill")
+                    .foregroundStyle(needsYou ? Color.orange : .green)
+                Text(session.project)
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: geometry.leadingWingWidth, alignment: .leading)
+            Spacer(minLength: 0)
+            Text(needsYou ? "Needs you" : "Done")
+                .foregroundStyle(needsYou ? Color.orange : .white.opacity(0.6))
+        }
+        .font(.system(size: Metrics.compactSymbol, weight: .semibold))
+        .padding(.horizontal, geometry.compactInset + 4)
+        .contentShape(Rectangle())
+        .onTapGesture { AgentMonitor.shared.open(session) }
+    }
+}
+
+/// Touch ID: a fingerprint that a band of light sweeps up while it waits, that shakes at a finger it
+/// can't read, and that gives way to a checkmark drawn in one stroke once a finger is accepted.
+private struct TouchIDSquare: View {
+    @Environment(\.notchGeometry) var geometry
+    let phase: TouchIDPhase
+    let misses: Int
+
+    private static let pink = LinearGradient(colors: [Color(red: 1, green: 0.42, blue: 0.47), Color(red: 1, green: 0.22, blue: 0.36)],
+                                             startPoint: .top, endPoint: .bottom)
+
+    var body: some View {
+        let accepted = phase == .accepted
+        ZStack {
+            fingerprint
+                .opacity(accepted ? 0 : 1)
+                .scaleEffect(accepted ? 0.7 : 1)
+                .blur(radius: accepted ? 4 : 0)
+                .animation(.easeOut(duration: 0.2), value: accepted)
+            Checkmark(progress: accepted ? 1 : 0)
+                .stroke(.green, style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
+                .frame(width: Metrics.touchIDGlyph * 0.62, height: Metrics.touchIDGlyph * 0.5)
+                .animation(.easeOut(duration: 0.3).delay(0.12), value: accepted)
+        }
+        .frame(width: Metrics.touchIDGlyph, height: Metrics.touchIDGlyph)
+        .modifier(Shake(trigger: misses))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.top, geometry.touchIDContentTop)
+    }
+
+    /// The glyph dim, with a bright copy showing through a band that rises up it every second and a half.
+    private var fingerprint: some View {
+        let glyph = Image(systemName: "touchid").font(.system(size: Metrics.touchIDGlyph * 0.92, weight: .regular))
+        return ZStack {
+            glyph.foregroundStyle(Self.pink).opacity(0.4)
+            TimelineView(.animation(paused: phase != .waiting)) { context in
+                let cycle = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.5) / 1.5
+                let rise = 1 - pow(1 - cycle, 2)   // eases out as it nears the top
+                glyph.foregroundStyle(Self.pink)
+                    .mask {
+                        LinearGradient(colors: [.clear, .white, .white, .clear], startPoint: .top, endPoint: .bottom)
+                            .frame(height: Metrics.touchIDGlyph * 0.7)
+                            .offset(y: Metrics.touchIDGlyph * (0.85 - 1.7 * rise))
+                    }
+            }
+        }
+    }
+}
+
+/// A quick side-to-side shake, like a passcode that's wrong, each time `trigger` changes.
+struct Shake: ViewModifier {
+    let trigger: Int
+
+    func body(content: Content) -> some View {
+        content.keyframeAnimator(initialValue: CGFloat.zero, trigger: trigger) { view, x in
+            view.offset(x: x)
+        } keyframes: { _ in
+            CubicKeyframe(-7, duration: 0.07)
+            CubicKeyframe(6, duration: 0.09)
+            CubicKeyframe(-4, duration: 0.08)
+            CubicKeyframe(2, duration: 0.07)
+            CubicKeyframe(0, duration: 0.07)
+        }
+    }
+}
+
+/// A checkmark drawn from its short stroke to the tip of its long one as `progress` goes to 1.
+private struct Checkmark: Shape {
+    var progress: CGFloat
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.midY + rect.height * 0.05))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.36, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        return path.trimmedPath(from: 0, to: progress)
+    }
+}
+
+/// The padlock, trailing; flipping `open` animates the shackle. On Macs with Touch ID, a fingerprint
+/// leads: dim at rest, lit while it reads a finger, shaking at one it can't read, and a green check
+/// once it matches.
 private struct LockCompact: View {
     @Environment(\.notchGeometry) var geometry
     let open: Bool
+    let finger: LockFinger?
+    let misses: Int
 
     var body: some View {
-        Image(systemName: open ? "lock.open.fill" : "lock.fill")
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(.white)
-            .contentTransition(.symbolEffect(.replace.magic(fallback: .replace)))
-            .frame(width: Metrics.lockIconBox, alignment: .leading)
-            .padding(.trailing, geometry.compactInset + 4)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+        HStack(spacing: 0) {
+            if let finger {
+                LockFingerprint(finger: finger)
+                    .modifier(Shake(trigger: misses))
+                    .padding(.leading, geometry.compactInset + 3)
+                    .transition(.opacity)
+            }
+            Spacer(minLength: 0)
+            Image(systemName: open ? "lock.open.fill" : "lock.fill")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white)
+                .contentTransition(.symbolEffect(.replace.magic(fallback: .replace)))
+                .frame(width: Metrics.lockIconBox, alignment: .leading)
+                .padding(.trailing, geometry.compactInset + 4)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// The lock screen's small fingerprint.
+private struct LockFingerprint: View {
+    let finger: LockFinger
+
+    private static let pink = LinearGradient(colors: [Color(red: 1, green: 0.42, blue: 0.47), Color(red: 1, green: 0.22, blue: 0.36)],
+                                             startPoint: .top, endPoint: .bottom)
+
+    var body: some View {
+        let matched = finger == .matched
+        ZStack {
+            let glyph = Image(systemName: "touchid").font(.system(size: 15, weight: .regular))
+            glyph.foregroundStyle(Self.pink).opacity(finger == .resting ? 0.45 : 0.35)
+            if finger == .reading {
+                // A band of light rising through it while it reads.
+                TimelineView(.animation) { context in
+                    let cycle = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.9) / 0.9
+                    glyph.foregroundStyle(Self.pink)
+                        .mask {
+                            LinearGradient(colors: [.clear, .white, .white, .clear], startPoint: .top, endPoint: .bottom)
+                                .frame(height: 12)
+                                .offset(y: 14 - 28 * (1 - pow(1 - cycle, 2)))
+                        }
+                }
+            }
+        }
+        .opacity(matched ? 0 : 1)
+        .scaleEffect(matched ? 0.6 : 1)
+        .overlay {
+            Checkmark(progress: matched ? 1 : 0)
+                .stroke(.green, style: StrokeStyle(lineWidth: 2.4, lineCap: .round, lineJoin: .round))
+                .frame(width: 11, height: 9)
+        }
+        .animation(.easeOut(duration: 0.22), value: finger)
+        .frame(width: 16, height: 16)
+    }
+}
+
+/// Music on the lock screen: the artwork, what's playing, and its controls, in a banner short enough
+/// to stay above the clock.
+private struct LockMusicBanner: View {
+    @Environment(\.notchGeometry) var geometry
+    let model: IslandModel
+    let media: MediaController
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ArtworkView(image: media.artwork, key: media.artworkKey, size: 38, radius: 8)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(media.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text(media.artist)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.55))
+            }
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 16) {
+                control("backward.fill", size: 14) { media.previous() }
+                control(media.isPlaying ? "pause.fill" : "play.fill", size: 19) {
+                    model.lockMusicKept = true
+                    media.togglePlayPause()
+                }
+                .contentTransition(.symbolEffect(.replace))
+                control("forward.fill", size: 14) { media.next() }
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(maxHeight: .infinity)
+        .padding(.top, geometry.bannerContentTop)
+    }
+
+    private func control(_ symbol: String, size: CGFloat, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: size, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 26, height: 30)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -753,6 +1033,8 @@ private struct OpenNotch: View {
         switch page {
         case .player: PlayerSection(model: model, media: media, outputs: outputs)
         case .calendar: CalendarSection(calendar: calendar)
+        case .reminders: RemindersSection(model: model, reminders: RemindersMonitor.shared)
+        case .weather: WeatherSection(weather: WeatherMonitor.shared)
         case .timer: TimerSection(model: model, timer: timer)
         case .system: SystemSection()
         case .shelf: ShelfSection(model: model, shelf: shelf)

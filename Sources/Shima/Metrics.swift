@@ -34,6 +34,10 @@ enum Metrics {
     /// Fixed box for the padlock so the open shackle grows rightward without the body shifting.
     static let lockIconBox: CGFloat = 16
 
+    /// The Touch ID square's side, and the fingerprint in it.
+    static let touchIDSide: CGFloat = 112
+    static let touchIDGlyph: CGFloat = 50
+
     // MARK: Open
 
     static let openWidth: CGFloat = 344
@@ -76,6 +80,12 @@ struct NotchSpec: Equatable {
     /// Distance from the top of the screen: none for the notch; the island's gap.
     var topInset: CGFloat = 0
 
+    /// The same shape, shorter by `amount` but no shorter than `minimum`: pushed back toward the top.
+    func shortened(by amount: CGFloat, to minimum: CGFloat) -> NotchSpec {
+        let height = max(minimum, body.height - max(0, amount))
+        return NotchSpec(body: CGSize(width: body.width, height: height), ear: ear, bottom: bottom, top: top, topInset: topInset)
+    }
+
     /// The body's rect in panel coordinates (top-left origin, centered; flush with the top edge, or
     /// just below it as an island).
     var bodyRect: CGRect {
@@ -101,6 +111,8 @@ enum Motion {
     static let close = Animation.smooth(duration: 0.45)
     /// Changes while closed: music starting, the shelf filling, the screen locking.
     static let compact = Animation.snappy(duration: 0.45)
+    /// Notch to island and back: a little slower, with a touch of bounce as it settles.
+    static let morph = Animation.spring(duration: 0.65, bounce: 0.22)
     static let contentIn = Animation.easeOut(duration: 0.16).delay(0.09)
     static let contentOut = Animation.easeOut(duration: 0.07)
     /// Closed content returns once the shape has nearly finished closing.

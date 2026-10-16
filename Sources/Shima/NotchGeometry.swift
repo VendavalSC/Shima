@@ -106,6 +106,12 @@ struct NotchGeometry: Equatable {
     var bannerContentTop: CGFloat { hasHardwareNotch ? closedHeight : 0 }
     var bannerContentHeight: CGFloat { hasHardwareNotch ? 50 : max(closedHeight + 26, 54) }
 
+    /// Music on the lock screen: a short banner with its controls, kept above the lock screen's clock.
+    var lockMusicBanner: NotchSpec {
+        shaped(body: CGSize(width: Metrics.openWidth, height: bannerContentTop + (hasHardwareNotch ? 50 : 58)),
+               ear: CGSize(width: 10, height: 10), bottom: CGSize(width: 22, height: 22))
+    }
+
     /// A notification opens below the notch, as wide as the open notch, with its content below the
     /// camera housing where there is one.
     var notificationBanner: NotchSpec {
@@ -128,6 +134,17 @@ struct NotchGeometry: Equatable {
     /// Leading and trailing content in a wing sits this far in, matching the top and bottom margin.
     var compactInset: CGFloat { (closedHeight - compactArt) / 2 }
     var compactArt: CGFloat { min(18, closedHeight - 10) }
+
+    /// A Touch ID prompt: the notch drops into a square around a fingerprint, like Face ID on
+    /// iPhone. It always covers a camera housing, and the fingerprint sits below it.
+    var touchIDSquare: NotchSpec {
+        let width = max(Metrics.touchIDSide, cameraHousing?.width ?? 0)
+        let height = isIsland ? Metrics.touchIDSide : touchIDContentTop + Metrics.touchIDSide - 8
+        return shaped(body: CGSize(width: width, height: height), ear: CGSize(width: 10, height: 10),
+                      bottom: CGSize(width: 32, height: 32))
+    }
+    /// Where the fingerprint's area starts: below a camera housing, or the menu bar a notch covers.
+    var touchIDContentTop: CGFloat { isIsland ? 0 : (hasHardwareNotch ? contentTop - 4 : closedHeight / 2) }
 
     // MARK: Open
 

@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var battery: BatteryMonitor?
     private let capsLock = CapsLockMonitor()
     private let drives = DriveMonitor()
+    private let touchID = TouchIDMonitor()
     private let calendar = CalendarMonitor()
     private let timer = NotchTimer()
     private lazy var settingsWindow = SettingsWindowController(settings: settings, shelf: shelf, calendar: calendar)
@@ -50,6 +51,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                                        isOn: on, tint: focus.color))
         }
         drives.onEject = { [weak self] drive in self?.activeIsland?.showDrive(drive) }
+        // The prompt shows on the display in use; how it ends goes to whichever notch took it.
+        touchID.onEvent = { [weak self] event in
+            guard let self else { return }
+            if event == .began { self.activeIsland?.showTouchID(event) } else { self.islands.values.forEach { $0.controller.showTouchID(event) } }
+        }
         calendar.onChange = { [weak self] event in
             guard let self else { return }
             self.upcomingEvent = event
@@ -58,6 +64,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         calendar.recalculate()
         NotificationWatcher.shared.onNotification = { [weak self] notification in
             self?.activeIsland?.showNotification(notification) ?? false
+        }
+        if ProcessInfo.processInfo.environment["SHIMA_DEMO_TOUCHID"] != nil {
+            // For testing without a prompt: one that's answered with a finger.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.activeIsland?.showTouchID(.began) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in self?.activeIsland?.showTouchID(.ended(succeeded: true)) }
         }
         if let demo = ProcessInfo.processInfo.environment["SHIMA_DEMO_DEVICE"] {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.activeIsland?.showDemoDevice(demo) }
@@ -121,8 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func installStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.button?.image = NSImage(systemSymbolName: "capsule.portrait.fill", accessibilityDescription: "Shima")
-            ?? NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "Shima")
+        item.button?.image = MenuBarIcon.image
         let menu = NSMenu()
         let settingsItem = menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
         settingsItem.target = self

@@ -319,6 +319,7 @@ private struct PagesPane: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
+            if settings.weatherPage { WeatherLocationSection(settings: settings) }
         }
         .formStyle(.grouped)
     }
@@ -329,6 +330,20 @@ private struct PagesPane: View {
         case .player: LabeledContent { Text("Always on") } label: { label }
         case .calendar: CalendarAccessToggle(title: page.title, setting: \.calendarPage, settings: settings, calendar: calendar,
                                              symbol: page.symbol)
+        case .reminders:
+            Toggle(isOn: Binding(get: { settings.remindersPage && RemindersMonitor.shared.hasAccess }, set: { turnOn in
+                guard turnOn else { return settings.remindersPage = false }
+                if RemindersMonitor.shared.hasAccess {
+                    settings.remindersPage = true
+                } else {
+                    RemindersMonitor.shared.requestAccess { granted in settings.remindersPage = granted }
+                }
+            })) { label }
+        case .weather:
+            Toggle(isOn: Binding(get: { settings.weatherPage }, set: { on in
+                settings.weatherPage = on
+                if on && settings.weatherCity == nil { WeatherMonitor.shared.requestLocation() }
+            })) { label }
         case .timer: Toggle(isOn: $settings.timerPage) { label }
         case .system: Toggle(isOn: $settings.systemPage) { label }
         case .shelf: Toggle(isOn: $settings.shelfEnabled) { label }
@@ -370,6 +385,18 @@ private struct ActivitiesPane: View {
                 Text("Audio")
             } footer: {
                 Text("When AirPods, other headphones or a speaker connect and start playing your sound, the notch shows them for a few seconds, with their battery level when they report one.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            AgentsSection(settings: settings)
+
+            Section {
+                Toggle("Show when the Mac asks for Touch ID", isOn: $settings.touchIDActivity)
+            } header: {
+                Text("Touch ID")
+            } footer: {
+                Text("When an app, a password or sudo asks for your fingerprint, the notch drops down with it, and shows a checkmark once your finger is accepted. On the lock screen, a fingerprint sits beside the padlock.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -536,6 +563,119 @@ private struct DisplayRow: View {
             .pickerStyle(.segmented)
             .padding(.leading, 28)
         }
+    }
+}
+
+/// Where the Weather page's forecast is for: the Mac's location, or a city.
+private struct WeatherLocationSection: View {
+    @Bindable var settings: AppSettings
+    @Bindable var form = WeatherForm()
+
+    var body: some View {
+        Section {
+            Picker("Location", selection: Binding(get: { settings.weatherCity == nil }, set: { useHere in
+                if useHere {
+                    settings.weatherCity = nil
+                    WeatherMonitor.shared.requestLocation()
+                } else {
+                    form.choosing = true
+                }
+            })) {
+                Text("Current Location").tag(true)
+                Text(settings.weatherCity?.name ?? "A City…").tag(false)
+            }
+            if form.choosing || settings.weatherCity != nil {
+                HStack {
+                    TextField("City", text: $form.city, prompt: Text(settings.weatherCity?.name ?? "Barcelona"))
+                        .onSubmit(search)
+                    Button("Use", action: search).disabled(form.city.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        } header: {
+            Text("Weather")
+        } footer: {
+            Text(form.notFound
+                 ? "No city by that name was found."
+                 : "Forecasts come from Open-Meteo, free and without an account. Only a rounded location is sent, and only when the notch opens with a forecast more than 15 minutes old.")
+                .font(.footnote)
+                .foregroundStyle(form.notFound ? .red : .secondary)
+        }
+    }
+
+    private func search() {
+        let name = form.city.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        WeatherMonitor.shared.search(city: name) { found in
+            form.notFound = !found
+            if found { form.city = ""; form.choosing = false }
+        }
+    }
+}
+
+@Observable
+final class WeatherForm {
+    var city = ""
+    var choosing = false
+    var notFound = false
+}
+
+/// Coding agents: connecting Claude Code and Codex adds Shima's hook to their settings.
+private struct AgentsSection: View {
+    @Bindable var settings: AppSettings
+    @Bindable var state = AgentsSectionState()
+
+    var body: some View {
+        Section {
+            Toggle("Show coding agents", isOn: $settings.agentActivity)
+            row("Claude Code", installed: AgentConnection.hasClaude, connected: state.claude) { connect in
+                try AgentConnection.setClaude(connected: connect)
+            }
+            row("Codex", installed: AgentConnection.hasCodex, connected: state.codex) { connect in
+                try AgentConnection.setCodex(connected: connect)
+            }
+        } header: {
+            Text("Coding Agents")
+        } footer: {
+            VStack(alignment: .leading, spacing: 6) {
+                if let error = state.error { Text(error).foregroundStyle(.red) }
+                Text("While Claude Code or Codex works, the notch shows the project and how long it's been going. It tells you when one needs your permission, and when it's done; click to go back to it. Connecting adds a small hook to the agent's settings, which Disconnect takes out again. Nothing leaves your Mac.")
+            }
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    private func row(_ name: String, installed: Bool, connected: Bool, set: @escaping (Bool) throws -> Void) -> some View {
+        LabeledContent(name) {
+            if !installed && !connected {
+                Text("Not installed").foregroundStyle(.secondary)
+            } else {
+                HStack(spacing: 8) {
+                    if connected { Label("Connected", systemImage: "checkmark.circle.fill").labelStyle(.titleAndIcon).foregroundStyle(.green) }
+                    Button(connected ? "Disconnect" : "Connect") {
+                        do {
+                            try set(!connected)
+                            state.error = nil
+                        } catch {
+                            state.error = "Couldn't change \(name)'s settings: \(error.localizedDescription)"
+                        }
+                        state.reload()
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Observable
+final class AgentsSectionState {
+    var claude = AgentConnection.isClaudeConnected
+    var codex = AgentConnection.isCodexConnected
+    var error: String?
+
+    func reload() {
+        claude = AgentConnection.isClaudeConnected
+        codex = AgentConnection.isCodexConnected
     }
 }
 

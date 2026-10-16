@@ -9,9 +9,10 @@
 ## What it does
 
 - **Now Playing** — artwork, a waveform tinted by the cover, a scrubber, and output switching.
-- **Pages you swipe through** — Calendar, a Timer with a ruler you slide, System stats and a file Shelf. Two-finger swipe; reorder them in Settings.
-- **Notifications in the notch** — macOS's banner steps aside, and you can **reply** to chats right there.
-- **Live activities** — AirPods connecting (with Apple's own spinning model and battery), charging, Caps Lock, Focus, and drives with an Eject button.
+- **Pages you swipe through** — Calendar, Reminders (tick them off, or type "call Ana tomorrow at 5"), Weather, a Timer with a ruler you slide, System stats and a file Shelf. Two-finger swipe; reorder them in Settings.
+- **Notifications in the notch** — macOS's banner steps aside, and you can **reply** to chats right there. Swipe up to send one away.
+- **Live activities** — AirPods connecting (with Apple's own spinning model and battery), charging, Caps Lock, Focus, drives with an Eject button, and Touch ID prompts.
+- **Coding agents** — while Claude Code or Codex works, the notch shows the project and the time; it tells you when one needs you and when it's done.
 - **Notch or island** — hang from the top edge, or float like iPhone's Dynamic Island. Per display, on every display.
 - **Light on your Mac** — no polling loops; idle at ~0% CPU.
 
@@ -35,8 +36,12 @@ xattr -dr com.apple.quarantine /Applications/Shima.app
 | Notifications, replies, Caps Lock | Accessibility |
 | Focus changes | Full Disk Access |
 | Calendar page and Up Next | Calendars |
+| Reminders page | Reminders |
+| Weather at your location | Location (or pick a city instead) |
 
-Nothing leaves your Mac.
+Nothing leaves your Mac, except a rounded location sent to [Open-Meteo](https://open-meteo.com) when the Weather page is on (it's off by default).
+
+To connect Claude Code or Codex, press **Connect** in Settings → Activities. That adds a small hook to their settings, and **Disconnect** removes it.
 
 ## Build it yourself
 
