@@ -21,10 +21,15 @@ enum Snapshot {
         var reply: ReplyPhase = .none
         var replyText = ""
         var event: UpcomingEvent?
+        var touchID: TouchIDPhase?
     }
 
     static func runIfRequested() -> Bool {
         guard let directory = ProcessInfo.processInfo.environment["SHIMA_SNAPSHOT"] else { return false }
+        Waveform.drawsStill = true
+        // SHIMA_README frames each state for the README: the notch hanging from the top of an ocean
+        // backdrop, cropped close.
+        let framed = ProcessInfo.processInfo.environment["SHIMA_README"] != nil
         // Run from the build folder (not the app bundle), these settings live in their own defaults domain.
         AppSettings.shared.calendarPage = true
         AppSettings.shared.shelfEnabled = true
@@ -102,6 +107,8 @@ enum Snapshot {
                                                               isBanner: false)),
             State(name: "system", expanded: true, section: .system),
             State(name: "open-reminders", expanded: true, section: .reminders),
+            State(name: "touch-id", playing: false, touchID: .waiting),
+            State(name: "touch-id-accepted", playing: false, touchID: .accepted),
             State(name: "open-weather", expanded: true, section: .weather),
             State(name: "agent-working", playing: false),
             State(name: "open-shelf", playing: false, shelf: true, expanded: true, section: .shelf),
@@ -142,6 +149,7 @@ enum Snapshot {
             model.replyPhase = state.reply
             model.replyText = state.replyText
             model.upcomingEvent = state.event
+            model.touchID = state.touchID
             AgentMonitor.shared.loadSample(state.name == "agent-working"
                 ? [AgentSession(id: "a", agent: "claude", project: "Shima", state: .working,
                                 since: Date().addingTimeInterval(-134), lastEvent: Date())] : [])
@@ -166,7 +174,15 @@ enum Snapshot {
                     }
                 }
                 .background(Color(red: 0.36, green: 0.42, blue: 0.52))
-            let renderer = ImageRenderer(content: view)
+            let shown = NotchContent.resolve(model: model, media: media, shelf: shelf, timer: timer).spec(in: model.geometry)
+            let readme = IslandRootView(model: model, media: media, outputs: AudioOutputController(), shelf: shelf,
+                                        calendar: calendar, timer: timer)
+                .frame(width: Metrics.window.width, height: Metrics.window.height)
+                .frame(width: Metrics.window.width, height: shown.topInset + shown.body.height + 28, alignment: .top)
+                .background(LinearGradient(colors: [Color(red: 0.36, green: 0.62, blue: 0.86), Color(red: 0.10, green: 0.32, blue: 0.60)],
+                                           startPoint: .top, endPoint: .bottom))
+                .clipped()
+            let renderer = framed ? ImageRenderer(content: AnyView(readme)) : ImageRenderer(content: AnyView(view))
             renderer.scale = 2
             guard let image = renderer.cgImage,
                   let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else {

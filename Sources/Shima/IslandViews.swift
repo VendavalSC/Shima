@@ -287,7 +287,7 @@ private struct MusicCompact: View {
             ArtworkView(image: media.artwork, key: media.artworkKey,
                         size: geometry.compactArt, radius: Metrics.compactArtRadius)
             Spacer(minLength: 0)
-            Visualizer(isPlaying: media.isPlaying, colors: media.waveformColors, spec: Metrics.compactBars)
+            Waveform(isPlaying: media.isPlaying, colors: media.waveformColors, spec: Metrics.compactBars)
         }
         .padding(.horizontal, geometry.compactInset)
     }
@@ -377,7 +377,7 @@ private struct NotificationBanner: View {
 
     private var message: some View {
         HStack(alignment: .center, spacing: 12) {
-            Image(nsImage: AppIcons.icon(forApp: notification.app))
+            Image(nsImage: Waveform.drawsStill ? AppIcons.icon(forApp: notification.app).flattened : AppIcons.icon(forApp: notification.app))
                 .resizable()
                 .interpolation(.high)
                 .frame(width: Metrics.notificationIcon, height: Metrics.notificationIcon)
@@ -1090,7 +1090,7 @@ private struct PlayerSection: View {
             }
             .frame(width: width - Metrics.bars.totalWidth - 12, height: Metrics.art, alignment: .leading)
 
-            Visualizer(isPlaying: media.isPlaying, colors: media.waveformColors, spec: Metrics.bars)
+            Waveform(isPlaying: media.isPlaying, colors: media.waveformColors, spec: Metrics.bars)
                 .opacity(media.hasMedia ? 1 : 0)
                 .position(x: width - Metrics.bars.totalWidth / 2, y: Metrics.art / 2)
 

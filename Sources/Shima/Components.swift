@@ -77,6 +77,32 @@ struct Visualizer: NSViewRepresentable {
     }
 }
 
+/// The waveform: the animated one, or a still drawing of it when rendering snapshots (the renderer
+/// can't draw the animated layers).
+struct Waveform: View {
+    let isPlaying: Bool
+    let colors: [Color]
+    let spec: BarSpec
+
+    /// Set while rendering snapshots.
+    static var drawsStill = false
+
+    var body: some View {
+        if Self.drawsStill {
+            HStack(spacing: spec.spacing) {
+                ForEach(Array([0.55, 0.95, 0.7, 1.0, 0.5].enumerated()), id: \.offset) { _, level in
+                    Capsule()
+                        .fill(LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom))
+                        .frame(width: spec.width, height: max(spec.width, spec.height * (isPlaying ? level : 0.2)))
+                }
+            }
+            .frame(width: spec.totalWidth, height: spec.height)
+        } else {
+            Visualizer(isPlaying: isPlaying, colors: colors, spec: spec)
+        }
+    }
+}
+
 /// Each bar fades from the top color to the bottom one along its own length, so every bar shows
 /// both, however high it reaches.
 final class WaveformView: NSView {
@@ -271,5 +297,24 @@ struct NotchButton: View {
             .disabled(!enabled)
             .opacity(enabled ? 1 : 0.35)
             .position(center)
+    }
+}
+
+extension NSImage {
+    /// A plain sRGB bitmap of it at 2x. App icons straight from macOS carry many sizes and color
+    /// profiles, which throws off the snapshot renderer's colors for the whole picture.
+    var flattened: NSImage {
+        let pixels = NSSize(width: size.width * 2, height: size.height * 2)
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(pixels.width), pixelsHigh: Int(pixels.height),
+                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)?
+            .retagging(with: .sRGB) else { return self }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        draw(in: NSRect(origin: .zero, size: pixels))
+        NSGraphicsContext.restoreGraphicsState()
+        let image = NSImage(size: size)
+        image.addRepresentation(rep)
+        return image
     }
 }
